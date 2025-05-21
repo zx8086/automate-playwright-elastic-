@@ -1,6 +1,5 @@
 {
   "name": "automate-playwright-elastic",
-  "module": "index.ts",
   "type": "module",
   "private": true,
   "scripts": {
