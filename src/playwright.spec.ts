@@ -5,59 +5,60 @@ import * as fs from "fs";
 import * as path from "path";
 import * as http from "http";
 import * as https from "https";
+import { config } from "../config";
 
 // Configuration
-const config = {
-  baseUrl:
-    process.env.TEST_URL ||
-    "https://presskit.tommy.com/SP25TommyHilfigerSailing/",
-  screenshotDir: "./navigation-screenshots",
-  downloadsDir: "./downloads",
-  syntheticsDir: "./synthetics",
-  pauseBetweenClicks: 1000, // ms between actions
-  environment: process.env.ENVIRONMENT || 'production',
-  department: process.env.DEPARTMENT || 'marketing_technology',
-  departmentShort: process.env.DEPARTMENT_SHORT || 'MT',
-  domain: process.env.DOMAIN || 'eu-shared-services',
-  service: 'presskit',
-  journeyType: 'PressKit',
-  allowedDownloads: {
-    extensions: [
-      ".pdf",  // PDF documents
-      ".zip",  // Compressed files
-      ".doc",  // Microsoft Word documents
-      ".docx", // Microsoft Word documents (new format)
-      ".xls",  // Microsoft Excel spreadsheets
-      ".xlsx", // Microsoft Excel spreadsheets (new format)
-      ".csv",  // Comma-separated values
-      ".jpg",  // JPEG images
-      ".jpeg", // JPEG images (alternative extension)
-      ".png",  // PNG images
-      ".mp4",  // MP4 videos
-      ".mp3",  // MP3 audio files
-    ],
-    maxFileSize: 100 * 1024 * 1024, // 100MB max file size
-    allowedMimeTypes: [
-      "application/pdf",
-      "application/zip",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "text/csv",
-      "image/jpeg",
-      "image/png",
-      "video/mp4",
-      "audio/mpeg",
-    ]
-  }
-};
+// const config = {
+//   baseUrl:
+//     process.env.TEST_URL ||
+//     "https://presskit.tommy.com/SP25TommyHilfigerSailing/",
+//   screenshotDir: "./navigation-screenshots",
+//   downloadsDir: "./downloads",
+//   syntheticsDir: "./synthetics",
+//   pauseBetweenClicks: 1000, // ms between actions
+//   environment: process.env.ENVIRONMENT || 'production',
+//   department: process.env.DEPARTMENT || 'marketing_technology',
+//   departmentShort: process.env.DEPARTMENT_SHORT || 'MT',
+//   domain: process.env.DOMAIN || 'eu-shared-services',
+//   service: 'presskit',
+//   journeyType: 'PressKit',
+//   allowedDownloads: {
+//     extensions: [
+//       ".pdf",  // PDF documents
+//       ".zip",  // Compressed files
+//       ".doc",  // Microsoft Word documents
+//       ".docx", // Microsoft Word documents (new format)
+//       ".xls",  // Microsoft Excel spreadsheets
+//       ".xlsx", // Microsoft Excel spreadsheets (new format)
+//       ".csv",  // Comma-separated values
+//       ".jpg",  // JPEG images
+//       ".jpeg", // JPEG images (alternative extension)
+//       ".png",  // PNG images
+//       ".mp4",  // MP4 videos
+//       ".mp3",  // MP3 audio files
+//     ],
+//     maxFileSize: 100 * 1024 * 1024, // 100MB max file size
+//     allowedMimeTypes: [
+//       "application/pdf",
+//       "application/zip",
+//       "application/msword",
+//       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+//       "application/vnd.ms-excel",
+//       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+//       "text/csv",
+//       "image/jpeg",
+//       "image/png",
+//       "video/mp4",
+//       "audio/mpeg",
+//     ]
+//   }
+// };
 
 test.describe("Site Navigation Test with Steps", () => {
   test.setTimeout(180000); // 3 minutes
 
   test.beforeEach(async ({ page }) => {
-    [config.screenshotDir, config.downloadsDir, config.syntheticsDir].forEach((dir) => {
+    [config.server.screenshotDir, config.server.downloadsDir, config.server.syntheticsDir].forEach((dir) => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
@@ -67,7 +68,7 @@ test.describe("Site Navigation Test with Steps", () => {
     await page.setViewportSize({ width: 1920, height: 1080 });
 
     // Navigate to site
-    await page.goto(config.baseUrl, {
+    await page.goto(config.server.baseUrl, {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
@@ -101,7 +102,7 @@ test.describe("Site Navigation Test with Steps", () => {
 
     // Take screenshot of navigation menu
     await page.screenshot({
-      path: path.join(config.screenshotDir, "navigation-menu.png")
+      path: path.join(config.server.screenshotDir, "navigation-menu.png")
     });
 
     // Navigate to each identified item directly (without clicking)
@@ -128,7 +129,7 @@ test.describe("Site Navigation Test with Steps", () => {
 
               // Try to download the file
               const downloadPath = path.join(
-                config.downloadsDir,
+                config.server.downloadsDir,
                 path.basename(item.href)
               );
               const downloadSuccessful = await downloadFile(
@@ -174,7 +175,7 @@ test.describe("Site Navigation Test with Steps", () => {
 
             // Wait for the page to load
             await page.waitForLoadState("domcontentloaded");
-            await page.waitForTimeout(config.pauseBetweenClicks);
+            await page.waitForTimeout(config.server.pauseBetweenClicks);
 
             // Verify navigation was successful
             const currentUrl = page.url();
@@ -195,7 +196,7 @@ test.describe("Site Navigation Test with Steps", () => {
               // Take screenshot of the page
               await page.screenshot({
                 path: path.join(
-                  config.screenshotDir,
+                  config.server.screenshotDir,
                   `${item.text.replace(/\s+/g, "-").toLowerCase()}.png`
                 ),
               });
@@ -204,9 +205,9 @@ test.describe("Site Navigation Test with Steps", () => {
               await checkPageSpecificElements(page, item.text);
 
               // Return to the main page for the next navigation
-              await page.goto(config.baseUrl, { timeout: 30000 });
+              await page.goto(config.server.baseUrl, { timeout: 30000 });
               await page.waitForLoadState("domcontentloaded");
-              await page.waitForTimeout(config.pauseBetweenClicks);
+              await page.waitForTimeout(config.server.pauseBetweenClicks);
             } else {
               console.log(`⚠️ Navigation to "${item.text}" didn't change URL`);
             }
@@ -252,10 +253,10 @@ test.describe("Site Navigation Test with Steps", () => {
       }
 
       // Export data for Elastic Synthetics
-      await exportElasticSyntheticsData(navigationPaths, config.screenshotDir);
+      await exportElasticSyntheticsData(navigationPaths, config.server.syntheticsDir);
 
       // Create a visual sitemap
-      await createVisualSitemap(navigationPaths, config.screenshotDir);
+      await createVisualSitemap(navigationPaths, config.server.screenshotDir);
     });
   });
 });
@@ -540,26 +541,26 @@ async function exportElasticSyntheticsData(
   
   // Export JSON for use with Elastic Synthetics
   const syntheticsData = {
-    baseUrl: config.baseUrl,
+    baseUrl: config.server.baseUrl,
     pages: pagesData,
     timestamp: new Date().toISOString()
   };
   
   // Save as JSON in the synthetics directory
   fs.writeFileSync(
-    path.join(config.syntheticsDir, "synthetics-data.json"), 
+    path.join(config.server.syntheticsDir, "synthetics-data.json"), 
     JSON.stringify(syntheticsData, null, 2)
   );
   
   // Generate and save Elastic Synthetics test file with correct name
   const testCode = generateElasticSyntheticsTest(syntheticsData);
-  const siteId = new URL(config.baseUrl).pathname.split('/').filter(Boolean).pop() || 'site';
+  const siteId = new URL(config.server.baseUrl).pathname.split('/').filter(Boolean).pop() || 'site';
   const fileName = `core.journey.ts`;
-  const filePath = path.join(config.syntheticsDir, fileName);
+  const filePath = path.join(config.server.syntheticsDir, fileName);
   
   fs.writeFileSync(filePath, testCode);
   
-  console.log(`Exported Elastic Synthetics data to: ${path.join(config.syntheticsDir, "synthetics-data.json")}`);
+  console.log(`Exported Elastic Synthetics data to: ${path.join(config.server.syntheticsDir, "synthetics-data.json")}`);
   console.log(`Generated Elastic Synthetics test at: ${filePath}`);
   
   return syntheticsData;
@@ -584,21 +585,21 @@ function generateElasticSyntheticsTest(data: {
   
   // Generate tags array
   const tags = [
-    config.environment,
-    config.department,
-    config.domain,
-    config.service,
+    config.server.environment,
+    config.server.department,
+    config.server.domain,
+    config.server.service,
     siteId // Add the site identifier as a tag
   ].filter(Boolean); // Remove any undefined/null values
   
   // Format monitor name according to convention
-  const monitorName = `${config.departmentShort} - ${config.journeyType} Journey | ${siteId} (core) - prd`;
+  const monitorName = `${config.server.departmentShort} - ${config.server.journeyType} Journey | ${siteId} (core) - prd`;
   
   // Format monitor ID
-  const monitorId = `${config.journeyType}_${siteId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const monitorId = `${config.server.journeyType}_${siteId.replace(/[^a-zA-Z0-9]/g, '_')}`;
   
   // Start building the test code
-  let code = `/* ${config.domain}/${config.service}/${siteId}/core.journey.ts */
+  let code = `/* ${config.server.domain}/${config.server.service}/${siteId}/core.journey.ts */
 
 import {journey, monitor, step} from '@elastic/synthetics';
 
