@@ -3,6 +3,9 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "test": "bun playwright test src/playwright.spec.ts"
+  },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
     "@types/bun": "latest"
