@@ -1,0 +1,16 @@
+{
+  "name": "automate-playwright-elastic",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "baseUrl": "https://presskit.tommy.com/SP25TommyHilfigerSailing/",
+  "pages": [
+    {
+      "label": "Bio",
+      "url": "https://presskit.tommy.com/SP25TommyHilfigerSailing/bio/",
+      "sourceUrl": "https://presskit.tommy.com/SP25TommyHilfigerSailing/",
+      "elementCounts": {
+        "images": 1,
+        "paragraphs": 3,
+        "headings": 2,
+        "links": 7,
+        "buttons": 0
+      },
+      "fullText": "Bio",
+      "href": ""
+    },
+    {
+      "label": "Assets",
+      "url": "https://presskit.tommy.com/SP25TommyHilfigerSailing/assets/",
+      "sourceUrl": "https://presskit.tommy.com/SP25TommyHilfigerSailing/",
+      "elementCounts": {
+        "images": 40,
+        "paragraphs": 2,
+        "headings": 7,
+        "links": 12,
+        "buttons": 0
+      },
+      "fullText": "Assets",
+      "href": ""
+    },
+    {
+      "label": "Contacts",
+      "url": "https://presskit.tommy.com/SP25TommyHilfigerSailing/contacts/",
+      "sourceUrl": "https://presskit.tommy.com/SP25TommyHilfigerSailing/",
+      "elementCounts": {
+        "images": 0,
+        "paragraphs": 88,
+        "headings": 37,
+        "links": 56,
+        "buttons": 0
+      },
+      "fullText": "Contacts",
+      "href": ""
+    }
+  ],
+  "timestamp": "2025-05-21T22:26:10.076Z"
+}
