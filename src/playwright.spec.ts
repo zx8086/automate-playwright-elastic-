@@ -562,13 +562,83 @@ journey('${monitorName}', async ({ page }) => {
         schedule: 30,
         screenshot: 'on',
         throttling: false,
-        tags: ${JSON.stringify(tags)},
+        tags: ${JSON.stringify(tags)}
     });
 
     const baseUrl = '${data.baseUrl}';
 
+    // Helper function to wait for full page load including images
+    const waitForFullPageLoad = async () => {
+        const startTime = Date.now();
+        try {
+            // Wait for DOM to be ready - this is essential
+            await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+            console.log('DOM loaded in ' + (Date.now() - startTime) + 'ms');
+            
+            // Wait for body to be visible - quick check
+            await page.waitForSelector('body', { state: 'visible', timeout: 5000 });
+            console.log('Body visible in ' + (Date.now() - startTime) + 'ms');
+            
+            // Check for gallery and asset images - only if they exist
+            const hasGalleryImages = await page.locator('.gallery img, .assets img').count() > 0;
+            if (hasGalleryImages) {
+                try {
+                    await page.waitForFunction(() => {
+                        const images = document.querySelectorAll('.gallery img, .assets img');
+                        return Array.from(images).every(img => img.complete);
+                    }, { timeout: 5000 });
+                    console.log('Gallery images loaded in ' + (Date.now() - startTime) + 'ms');
+                } catch (e) {
+                    console.log('Gallery images still loading, continuing...');
+                }
+            }
+
+            // Check for thumbnails - only if they exist
+            const hasThumbnails = await page.locator('img[src*="thumbnail"]').count() > 0;
+            if (hasThumbnails) {
+                try {
+                    await page.waitForSelector('img[src*="thumbnail"]', { state: 'visible', timeout: 5000 });
+                    console.log('Thumbnails loaded in ' + (Date.now() - startTime) + 'ms');
+                } catch (e) {
+                    console.log('Thumbnails still loading, continuing...');
+                }
+            }
+
+            // Quick scroll to trigger lazy loading if needed
+            if (hasGalleryImages || hasThumbnails) {
+                await page.evaluate(() => {
+                    window.scrollTo(0, document.body.scrollHeight);
+                    window.scrollTo(0, 0);
+                });
+                console.log('Scroll completed in ' + (Date.now() - startTime) + 'ms');
+            }
+
+            // Short wait for any final network activity
+            await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {
+                console.log('Network still active, continuing...');
+            });
+            
+            console.log('Total page load time: ' + (Date.now() - startTime) + 'ms');
+        } catch (e) {
+            console.log('Page load timeout after ' + (Date.now() - startTime) + 'ms, continuing...');
+        }
+    };
+
     step('Go to homepage', async () => {
-        await page.goto(baseUrl);
+        try {
+            await page.goto(baseUrl, { 
+                waitUntil: 'domcontentloaded',
+                timeout: 10000 
+            });
+            await waitForFullPageLoad();
+        } catch (e) {
+            console.log('Initial page load failed, retrying...');
+            await page.goto(baseUrl, { 
+                waitUntil: 'domcontentloaded',
+                timeout: 10000 
+            });
+            await waitForFullPageLoad();
+        }
     });
 `;
 
@@ -584,17 +654,24 @@ journey('${monitorName}', async ({ page }) => {
         try {
             // Try role-based selector with full text
             await page.getByRole('link', { name: '${page.fullText?.replace(/'/g, "\\'") || page.label.replace(/'/g, "\\'")}' }).click();
+            await waitForFullPageLoad();
         } catch (e) {
             try {
                 // Try href-based selector
                 await page.locator('a[href*="${page.href.replace(/^\.\//, '')}"]').click();
+                await waitForFullPageLoad();
             } catch (e) {
                 try {
                     // Try text-based selector
                     await page.locator('a').filter({ hasText: '${page.label.replace(/'/g, "\\'")}' }).click();
+                    await waitForFullPageLoad();
                 } catch (e) {
                     // Direct navigation as fallback
-                    await page.goto('${page.url}');
+                    await page.goto('${page.url}', {
+                        waitUntil: 'domcontentloaded',
+                        timeout: 30000
+                    });
+                    await waitForFullPageLoad();
                 }
             }
         }
@@ -603,10 +680,15 @@ journey('${monitorName}', async ({ page }) => {
     step('Return to previous page', async () => {
         try {
             // Try browser back
-            await page.goBack();
+            await page.goBack({ waitUntil: 'networkidle' });
+            await waitForFullPageLoad();
         } catch (e) {
             // Fallback to direct navigation
-            await page.goto(baseUrl);
+            await page.goto(baseUrl, { 
+                waitUntil: 'domcontentloaded',
+                timeout: 30000 
+            });
+            await waitForFullPageLoad();
         }
     });`;
   });
@@ -616,10 +698,15 @@ journey('${monitorName}', async ({ page }) => {
     step('Return to homepage', async () => {
         try {
             // Try browser back
-            await page.goBack();
+            await page.goBack({ waitUntil: 'networkidle' });
+            await waitForFullPageLoad();
         } catch (e) {
             // Fallback to direct navigation
-            await page.goto(baseUrl);
+            await page.goto(baseUrl, { 
+                waitUntil: 'domcontentloaded',
+                timeout: 30000 
+            });
+            await waitForFullPageLoad();
         }
     });
 });
