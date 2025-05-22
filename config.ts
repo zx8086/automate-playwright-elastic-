@@ -50,7 +50,7 @@ type Config = z.infer<typeof ConfigSchema>;
 // Default configuration
 const defaultConfig: Config = {
   server: {
-    baseUrl: "https://presskit.tommy.com/SP25TommyHilfigerSailing/",
+    baseUrl: "https://www.prd.presskits.eu.pvh.cloud/tommyxmercedes-amgf1xclarenceruth/",
     screenshotDir: "./navigation-screenshots",
     downloadsDir: "./downloads",
     syntheticsDir: "./synthetics",

@@ -7,53 +7,6 @@ import * as http from "http";
 import * as https from "https";
 import { config } from "../config";
 
-// Configuration
-// const config = {
-//   baseUrl:
-//     process.env.TEST_URL ||
-//     "https://presskit.tommy.com/SP25TommyHilfigerSailing/",
-//   screenshotDir: "./navigation-screenshots",
-//   downloadsDir: "./downloads",
-//   syntheticsDir: "./synthetics",
-//   pauseBetweenClicks: 1000, // ms between actions
-//   environment: process.env.ENVIRONMENT || 'production',
-//   department: process.env.DEPARTMENT || 'marketing_technology',
-//   departmentShort: process.env.DEPARTMENT_SHORT || 'MT',
-//   domain: process.env.DOMAIN || 'eu-shared-services',
-//   service: 'presskit',
-//   journeyType: 'PressKit',
-//   allowedDownloads: {
-//     extensions: [
-//       ".pdf",  // PDF documents
-//       ".zip",  // Compressed files
-//       ".doc",  // Microsoft Word documents
-//       ".docx", // Microsoft Word documents (new format)
-//       ".xls",  // Microsoft Excel spreadsheets
-//       ".xlsx", // Microsoft Excel spreadsheets (new format)
-//       ".csv",  // Comma-separated values
-//       ".jpg",  // JPEG images
-//       ".jpeg", // JPEG images (alternative extension)
-//       ".png",  // PNG images
-//       ".mp4",  // MP4 videos
-//       ".mp3",  // MP3 audio files
-//     ],
-//     maxFileSize: 100 * 1024 * 1024, // 100MB max file size
-//     allowedMimeTypes: [
-//       "application/pdf",
-//       "application/zip",
-//       "application/msword",
-//       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-//       "application/vnd.ms-excel",
-//       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-//       "text/csv",
-//       "image/jpeg",
-//       "image/png",
-//       "video/mp4",
-//       "audio/mpeg",
-//     ]
-//   }
-// };
-
 test.describe("Site Navigation Test with Steps", () => {
   test.setTimeout(180000); // 3 minutes
 
@@ -272,7 +225,7 @@ async function getElementCounts(page: Page) {
   };
 }
 
-// Update the identifyNavigation function to be more generic
+// Identify navigation items
 async function identifyNavigation(page: Page) {
   console.log("Analyzing navigation structure...");
   
@@ -287,7 +240,7 @@ async function identifyNavigation(page: Page) {
       href: string;
       fullText: string;
     }> = [];
-    
+
     // Generic navigation selectors that work for most sites
     const navSelectors = [
       'nav a',                    // Standard nav links
@@ -589,8 +542,8 @@ function generateElasticSyntheticsTest(data: {
     config.server.department,
     config.server.domain,
     config.server.service,
-    siteId // Add the site identifier as a tag
-  ].filter(Boolean); // Remove any undefined/null values
+    siteId 
+  ].filter(Boolean);
   
   // Format monitor name according to convention
   const monitorName = `${config.server.departmentShort} - ${config.server.journeyType} Journey | ${siteId} (core) - prd`;
