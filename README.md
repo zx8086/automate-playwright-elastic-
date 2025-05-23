@@ -4,7 +4,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev)
 [![Elastic](https://img.shields.io/badge/Elastic-005571?style=for-the-badge&logo=elastic&logoColor=white)](https://www.elastic.co)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](zx8086/automate-playwright-elastic-)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/zx8086/automate-playwright-elastic-)
 
 A comprehensive Playwright-based automation tool for website navigation analysis, asset discovery, and Elastic Synthetics test generation. This project automatically explores websites, downloads assets, takes screenshots, and generates monitoring tests for continuous website health checks.
 
