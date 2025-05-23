@@ -6,17 +6,18 @@
 [![Elastic](https://img.shields.io/badge/Elastic-005571?style=for-the-badge&logo=elastic&logoColor=white)](https://www.elastic.co)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/zx8086/automate-playwright-elastic-)
 
-A comprehensive Playwright-based automation tool for website navigation analysis, asset discovery, and Elastic Synthetics test generation. This project automatically explores websites, downloads assets, takes screenshots, and generates monitoring tests for continuous website health checks.
+A comprehensive Playwright-based automation tool for press kit navigation analysis, asset discovery, and Elastic Synthetics test generation. This project automatically explores press kit websites, downloads assets, takes screenshots, and generates monitoring tests for continuous website health checks.
 
 ## Features
 
-- **Automated Website Navigation**: Intelligently discovers and navigates through all website links
-- **Asset Discovery & Download**: Identifies and downloads various file types (PDFs, images, documents, etc.)
+- **Intelligent Press Kit Navigation**: Discovers and navigates through all press kit links with enhanced detection
+- **Smart Asset Discovery & Download**: Identifies and downloads press kit assets (PDFs, images, videos, etc.)
+- **Duplicate Prevention**: Prevents processing the same URLs and downloads multiple times
 - **Screenshot Capture**: Takes screenshots of each page for visual documentation
 - **Elastic Synthetics Integration**: Automatically generates monitoring tests for Elastic Observability
 - **Configurable & Environment-aware**: Supports multiple environments with flexible configuration
-- **Visual Sitemap Generation**: Creates HTML sitemaps showing website structure
-- **Comprehensive Reporting**: Detailed navigation summaries and element analysis
+- **Visual Sitemap Generation**: Creates HTML sitemaps showing press kit structure
+- **Comprehensive Reporting**: Detailed navigation summaries with file sizes and element analysis
 
 ## Table of Contents
 
@@ -81,14 +82,15 @@ The project uses a flexible configuration system that combines default values wi
 
 #### Browser Configuration
 - Headless mode settings
-- Viewport dimensions
+- Viewport dimensions (default: 1920x1080)
 - SSL certificate handling
 - Recording options (screenshots, video, traces)
 
 #### Download Configuration
 - Allowed file extensions
-- Maximum file size limits
+- Maximum file size limits (default: 100MB)
 - MIME type restrictions
+- Download timeout and retry settings
 
 ## Usage
 
@@ -109,7 +111,7 @@ The test can be customized using Playwright's built-in options:
 bun run test --headed=false
 
 # Run with specific timeout
-bun run test --timeout=60000
+bun run test --timeout=180000
 
 # Generate HTML report
 bun run test --reporter=html
@@ -169,8 +171,8 @@ Configure the application using these environment variables in your `.env` file:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `BROWSER_HEADLESS` | Run browser in headless mode | `false` |
-| `VIEWPORT_WIDTH` | Browser viewport width | `1280` |
-| `VIEWPORT_HEIGHT` | Browser viewport height | `720` |
+| `VIEWPORT_WIDTH` | Browser viewport width | `1920` |
+| `VIEWPORT_HEIGHT` | Browser viewport height | `1080` |
 | `IGNORE_HTTPS_ERRORS` | Ignore SSL certificate errors | `true` |
 | `SCREENSHOT_MODE` | Screenshot capture mode | `on` |
 | `VIDEO_MODE` | Video recording mode | `on` |
@@ -194,9 +196,10 @@ The automation generates several types of output files:
 
 ### Downloaded Assets
 - **Location**: `downloads/` directory
-- **Types**: PDFs, images, documents, archives
+- **Types**: PDFs, images, videos, archives
 - **Validation**: File type and size validation before download
 - **Logging**: Download success/failure with file sizes
+- **Duplicate Prevention**: Each download is processed only once
 
 ### Elastic Synthetics
 - **Data File**: `synthetics/synthetics-data.json` - Structured navigation data
@@ -224,7 +227,7 @@ The project automatically generates monitoring tests compatible with Elastic Syn
 ```typescript
 journey('Department - Journey Type | site (core) - env', async ({ page }) => {
     monitor.use({
-        id: 'JourneyType_site',
+        id: 'PressKit_site',
         schedule: 30,
         screenshot: 'on',
         throttling: false,
@@ -235,31 +238,21 @@ journey('Department - Journey Type | site (core) - env', async ({ page }) => {
 });
 ```
 
-### Deployment
-
-The generated `core.journey.ts` file can be directly deployed to Elastic Synthetics:
-
-```bash
-# Using Elastic Synthetics CLI
-elastic-synthetics push --url <kibana-url> --id <project-id> synthetics/
-```
-
 ## Supported File Types
 
 ### Downloadable Extensions
-- **Documents**: `.pdf`, `.doc`, `.docx`, `.xls`, `.xlsx`, `.csv`
-- **Images**: `.jpg`, `.jpeg`, `.png`
-- **Media**: `.mp4`, `.mp3`
-- **Archives**: `.zip`
+- **Documents**: `.pdf`, `.doc`, `.docx`, `.xls`, `.xlsx`, `.csv`, `.txt`, `.rtf`
+- **Images**: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.svg`, `.bmp`, `.tiff`
+- **Media**: `.mp4`, `.mov`, `.avi`, `.wmv`, `.mp3`, `.wav`, `.m4v`, `.webm`
+- **Archives**: `.zip`, `.rar`, `.7z`
+- **Design Files**: `.psd`, `.ai`, `.eps`, `.indd`, `.sketch`
 
 ### MIME Types
-- `application/pdf`
-- `application/zip`
-- `application/msword`
-- `application/vnd.openxmlformats-officedocument.*`
-- `text/csv`
-- `image/jpeg`, `image/png`
-- `video/mp4`, `audio/mpeg`
+- **Documents**: `application/pdf`, `application/msword`, `application/vnd.openxmlformats-officedocument.*`
+- **Archives**: `application/zip`, `application/x-zip-compressed`, `application/x-rar-compressed`
+- **Images**: `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `image/svg+xml`
+- **Media**: `video/mp4`, `video/quicktime`, `video/x-msvideo`, `audio/mpeg`, `audio/wav`
+- **Generic**: `application/octet-stream`
 
 ### Size Limits
 - **Default Maximum**: 100MB per file
@@ -299,8 +292,14 @@ Modify the `identifyNavigation` function in `src/playwright.spec.ts`:
 
 ```typescript
 const navSelectors = [
-    'nav a',                    // Add new selectors here
-    '.custom-menu a',           // Custom navigation patterns
+    // Press kit specific selectors
+    ".press-kit-nav a", ".presskit-nav a", ".pk-nav a",
+    
+    // Tommy Hilfiger specific patterns
+    'a[href*=".html"]',  // Page links
+    'a[href*=".pdf"]',   // PDF downloads
+    'a[href*=".zip"]',   // ZIP downloads
+    'a[href*="/assets/"]', // Asset downloads
     // ...existing selectors
 ];
 ```
@@ -324,9 +323,9 @@ allowedDownloads: {
 #### Navigation Not Found
 **Problem**: "No navigation items found"
 **Solution**:
-- Check if the website uses custom navigation selectors
+- Check if the press kit uses custom navigation selectors
 - Add site-specific selectors to `identifyNavigation` function
-- Verify the website loads correctly
+- Verify the press kit loads correctly
 
 #### Download Failures
 **Problem**: Downloads fail or are skipped
@@ -370,15 +369,8 @@ DEBUG=pw:api bun run test
 NODE_ENV=development bun run test
 
 # With memory usage monitoring
-# Shows memory usage at start and end of test runs
 bun run test
 ```
-
-The memory usage monitoring will show:
-- **RSS**: Resident Set Size - total memory allocated for the process
-- **Heap Total**: Total size of the allocated heap
-- **Heap Used**: Currently active heap memory
-- **External**: Memory used by C++ objects bound to JavaScript objects
 
 ### Performance Optimization
 
