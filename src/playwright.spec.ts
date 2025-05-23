@@ -396,6 +396,32 @@ async function identifyNavigation(page: Page) {
 // Helper to check for page-specific elements
 async function checkPageSpecificElements(page: Page, pageName: string) {
   await test.step(`Check ${pageName} page elements`, async () => {
+    // Scroll through the page to trigger lazy loading
+    await page.evaluate(async () => {
+      const scrollToBottom = async () => {
+        const scrollHeight = document.documentElement.scrollHeight;
+        const viewportHeight = window.innerHeight;
+        const totalSteps = Math.ceil(scrollHeight / viewportHeight);
+        
+        for (let step = 0; step < totalSteps; step++) {
+          const scrollTo = step * viewportHeight;
+          window.scrollTo(0, scrollTo);
+          // Wait for any lazy loading to trigger
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        // Final scroll to bottom
+        window.scrollTo(0, scrollHeight);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Scroll back to top
+        window.scrollTo(0, 0);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      };
+      
+      await scrollToBottom();
+    });
+
     // Common elements to check
     const elementCounts = await getElementCounts(page);
 
@@ -820,56 +846,98 @@ journey('${monitorName}', async ({ page }) => {
                 page.waitForTimeout(2000)
             ]);
             
+            // Improved scrolling implementation
+            await page.evaluate(async () => {
+                const scrollToBottom = async () => {
+                    const scrollHeight = document.documentElement.scrollHeight;
+                    const viewportHeight = window.innerHeight;
+                    const totalSteps = Math.ceil(scrollHeight / viewportHeight);
+                    
+                    for (let step = 0; step < totalSteps; step++) {
+                        const scrollTo = step * viewportHeight;
+                        window.scrollTo(0, scrollTo);
+                        // Wait for any lazy loading to trigger
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                    
+                    // Final scroll to bottom
+                    window.scrollTo(0, scrollHeight);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    // Scroll back to top
+                    window.scrollTo(0, 0);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                };
+                
+                await scrollToBottom();
+            });
+            
             // Optimized image loading detection
             const imageLoadResult = await Promise.race([
-                // Strategy 1: Wait for visible images to load
+                // Strategy 1: Wait for all images to load
                 page.waitForFunction(
                     () => {
                         const images = Array.from(document.querySelectorAll('img'));
                         if (images.length === 0) return true;
                         
-                        // Focus on visible images first
-                        const visibleImages = images.filter(img => {
-                            const rect = img.getBoundingClientRect();
-                            const isVisible = rect.width > 0 && rect.height > 0 && 
-                                            rect.top < window.innerHeight + 100;
-                            return isVisible;
-                        });
-                        
-                        if (visibleImages.length === 0) return true;
-                        
-                        // Check if visible images are loaded
-                        const loadedVisibleImages = visibleImages.filter(img => {
+                        // Check all images, not just visible ones
+                        const loadedImages = images.filter(img => {
                             return img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
                         });
                         
-                        const loadRatio = loadedVisibleImages.length / visibleImages.length;
+                        const loadRatio = loadedImages.length / images.length;
                         
-                        // Accept 40% of visible images loaded
-                        return loadRatio >= 0.4;
+                        // Require 80% of all images to be loaded
+                        return loadRatio >= 0.8;
                     },
                     { timeout: timeout }
                 ),
                 
-                // Strategy 2: Timeout fallback with shorter timeout
+                // Strategy 2: Timeout fallback
                 page.waitForTimeout(timeout).then(() => {
                     console.log('📸 Image loading timeout reached');
                     return true;
                 })
             ]);
             
-            // Verify image dimensions
-            const imageDimensions = await page.evaluate(() => {
+            // Verify image dimensions and log loading status
+            const imageStatus = await page.evaluate(() => {
                 const images = Array.from(document.querySelectorAll('img'));
                 return images.map(img => ({
                     width: img.naturalWidth,
                     height: img.naturalHeight,
-                    complete: img.complete
+                    complete: img.complete,
+                    src: img.src,
+                    visible: img.getBoundingClientRect().width > 0 && 
+                            img.getBoundingClientRect().height > 0,
+                    position: {
+                        top: img.getBoundingClientRect().top,
+                        bottom: img.getBoundingClientRect().bottom,
+                        left: img.getBoundingClientRect().left,
+                        right: img.getBoundingClientRect().right
+                    }
                 }));
             });
             
-            const validImages = imageDimensions.filter(img => img.width > 0 && img.height > 0);
-            console.log(\`📸 Valid images: \${validImages.length}/\${imageCount}\`);
+            const validImages = imageStatus.filter(img => img.width > 0 && img.height > 0);
+            const visibleImages = imageStatus.filter(img => img.visible);
+            const loadedVisibleImages = visibleImages.filter(img => img.complete);
+            
+            console.log(\`📸 Image loading status:\`);
+            console.log(\`   - Total images: \${imageCount}\`);
+            console.log(\`   - Valid images: \${validImages.length}/\${imageCount}\`);
+            console.log(\`   - Visible images: \${visibleImages.length}/\${imageCount}\`);
+            console.log(\`   - Loaded visible images: \${loadedVisibleImages.length}/\${visibleImages.length}\`);
+            
+            if (loadedVisibleImages.length < visibleImages.length) {
+                console.log('📸 Some visible images failed to load:');
+                visibleImages
+                    .filter(img => !img.complete)
+                    .forEach(img => {
+                        console.log(\`   - \${img.src}\`);
+                        console.log(\`     Position: top=\${img.position.top}, bottom=\${img.position.bottom}\`);
+                    });
+            }
             
             console.log(\`📸 Images processed in \${Date.now() - startTime}ms\`);
             return validImages.length > 0;
