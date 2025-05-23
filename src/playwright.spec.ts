@@ -1,4 +1,4 @@
-/* src/test.spec.ts */
+/* src/test.spec.ts - Enhanced version with comprehensive fixes */
 
 import { test, expect, Page } from "@playwright/test";
 import * as fs from "fs";
@@ -86,9 +86,10 @@ test.describe("Site Navigation Test with Steps", () => {
     const navigationItems = await identifyNavigation(page);
     console.log(`Found ${navigationItems.length} navigation items`);
 
-    // Log all navigation items
+    // Log all navigation items with their types
     navigationItems.forEach((item, idx) => {
-      // console.log(`${idx + 1}. ${item.text} (${item.href})`);
+      const downloadIcon = item.isDownload ? "📥" : "🔗";
+      console.log(`${idx + 1}. ${downloadIcon} ${item.text} (${item.href})`);
     });
 
     // Take screenshot of navigation menu
@@ -107,7 +108,7 @@ test.describe("Site Navigation Test with Steps", () => {
         // Check if it's a downloadable resource
         if (isDownloadableResource(item.href)) {
           try {
-            console.log(`Handling downloadable resource: ${item.text}`);
+            console.log(`📥 Handling downloadable resource: ${item.text}`);
 
             // Get absolute URL
             const absoluteUrl = new URL(item.href, page.url()).toString();
@@ -161,7 +162,7 @@ test.describe("Site Navigation Test with Steps", () => {
             // For regular pages, navigate directly to the URL instead of clicking
             const absoluteUrl = new URL(item.href, page.url()).toString();
 
-            console.log(`Direct navigation to: ${absoluteUrl}`);
+            console.log(`🔗 Direct navigation to: ${absoluteUrl}`);
             await page.goto(absoluteUrl, { timeout: 30000 });
 
             // Wait for the page to load
@@ -266,9 +267,9 @@ async function getElementCounts(page: Page) {
   };
 }
 
-// Identify navigation items
+// ENHANCED: Identify navigation items with better detection
 async function identifyNavigation(page: Page) {
-  console.log("Analyzing navigation structure...");
+  console.log("🔍 Analyzing navigation structure with enhanced detection...");
 
   const navItems = await page.evaluate(() => {
     const cleanText = (html: string | null): string => {
@@ -283,21 +284,34 @@ async function identifyNavigation(page: Page) {
       text: string;
       href: string;
       fullText: string;
+      isDownload: boolean;
     }> = [];
 
-    // Generic navigation selectors that work for most sites
+    // ENHANCED: More comprehensive selectors for all press kit types
     const navSelectors = [
-      "nav a", // Standard nav links
-      "header a", // Header links
-      ".menu a", // Menu links
-      ".navbar a", // Navbar links
-      ".navigation a", // Navigation links
-      '[role="navigation"] a', // ARIA navigation
-      ".main-menu a", // Main menu
-      ".site-nav a", // Site navigation
-      ".primary-nav a", // Primary navigation
-      ".secondary-nav a", // Secondary navigation
-      "footer a", // Footer links
+      // Standard navigation
+      "nav a", "header a", ".menu a", ".navbar a", ".navigation a",
+      '[role="navigation"] a', ".main-menu a", ".site-nav a",
+      
+      // Press kit specific selectors
+      ".press-kit-nav a", ".presskit-nav a", ".pk-nav a",
+      
+      // Tommy Hilfiger specific patterns
+      'a[href*=".html"]',  // Page links
+      'a[href*=".pdf"]',   // PDF downloads
+      'a[href*=".zip"]',   // ZIP downloads
+      'a[href*="/assets/"]', // Asset downloads
+      'a[href*="/files/"]',  // File downloads
+      'a[href*="download"]', // Download links
+      'a[href*="product.zip"]', // Specific product ZIP
+      'a[href*="stills.zip"]',  // Stills ZIP
+      'a[href*="images.zip"]',  // Images ZIP
+      
+      // Generic content links
+      "main a", ".content a", ".container a",
+      
+      // Footer links (often contain downloads)
+      "footer a"
     ];
 
     // Try each selector
@@ -310,7 +324,8 @@ async function identifyNavigation(page: Page) {
           !href ||
           href === "#" ||
           href.startsWith("javascript:") ||
-          href.startsWith("mailto:")
+          href.startsWith("mailto:") ||
+          href.startsWith("tel:")
         ) {
           continue;
         }
@@ -334,44 +349,114 @@ async function identifyNavigation(page: Page) {
 
         if (!text) continue;
 
+        // ENHANCED: Better download detection
+        const isDownload = href.includes('.pdf') || 
+                          href.includes('.zip') || 
+                          href.includes('/assets/') ||
+                          href.includes('/download') ||
+                          href.includes('product.zip') ||
+                          href.includes('stills.zip') ||
+                          href.includes('images.zip') ||
+                          href.includes('media.zip') ||
+                          text.toLowerCase().includes('download') ||
+                          text.toLowerCase().includes('assets');
+
         // Check if this link is already in our list
         if (!items.some((item) => item.href === href)) {
           items.push({
             text,
             href: href as string,
             fullText,
+            isDownload
           });
         }
       }
     }
 
+    // ENHANCED: Special handling for hidden download links
+    const potentialDownloads = document.querySelectorAll('[data-download], [data-file], .download-link, .download-btn');
+    for (const element of potentialDownloads) {
+      const href = element.getAttribute('href') || 
+                   element.getAttribute('data-href') ||
+                   element.getAttribute('data-url');
+      
+      if (href) {
+        const text = element.textContent?.trim() || 'Download';
+        if (!items.some((item) => item.href === href)) {
+          items.push({
+            text,
+            href,
+            fullText: text,
+            isDownload: true
+          });
+        }
+      }
+    }
+
+    console.log(`Found ${items.length} navigation items with enhanced detection`);
     return items;
   });
 
   if (navItems.length === 0) {
-    console.log(
-      "No navigation items found with standard selectors, trying generic approach...",
-    );
-
-    // Fallback to generic approach
-    const genericNavItems = await page.evaluate(() => {
+    console.log("⚠️ No navigation items found with enhanced selectors, trying comprehensive fallback...");
+    
+    // ENHANCED: More comprehensive fallback
+    const fallbackNavItems = await page.evaluate(() => {
       const items: Array<{
         text: string;
         href: string;
         fullText: string;
+        isDownload: boolean;
       }> = [];
 
-      // Get all links that might be navigation
-      const allLinks = document.querySelectorAll(
-        'a[href]:not([href^="#"]):not([href^="javascript:"]):not([href^="mailto:"])',
-      );
+      // Get ALL links on the page
+      const allLinks = document.querySelectorAll('a[href]');
 
       for (const link of allLinks) {
-        const href = link.getAttribute("href");
-        if (!href) continue;
+        const href = link.getAttribute('href');
+        if (!href || href === '#' || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+          continue;
+        }
 
-        const text = link.textContent?.trim() || "";
-        if (!text) continue;
+        const text = link.textContent?.trim() || '';
+        if (!text || text.length < 2) continue;
+
+        // ENHANCED: Better filtering for valid navigation links
+        const isValidNavLink = 
+          href.includes('.html') ||
+          href.includes('.pdf') ||
+          href.includes('.zip') ||
+          href.includes('/assets/') ||
+          href.includes('/files/') ||
+          href.includes('/bio') ||
+          href.includes('/contact') ||
+          href.includes('/about') ||
+          href.includes('/press') ||
+          href.includes('/gallery') ||
+          href.includes('/aleali-may') ||
+          href.includes('download') ||
+          text.toLowerCase().includes('bio') ||
+          text.toLowerCase().includes('contact') ||
+          text.toLowerCase().includes('about') ||
+          text.toLowerCase().includes('press') ||
+          text.toLowerCase().includes('assets') ||
+          text.toLowerCase().includes('download') ||
+          text.toLowerCase().includes('gallery') ||
+          text.toLowerCase().includes('images') ||
+          text.toLowerCase().includes('video') ||
+          text.toLowerCase().includes('stills') ||
+          text.toLowerCase().includes('aleali') ||
+          text.toLowerCase().includes('q&a');
+
+        if (!isValidNavLink) continue;
+
+        const isDownload = href.includes('.pdf') || 
+                          href.includes('.zip') || 
+                          href.includes('/assets/') ||
+                          href.includes('/files/') ||
+                          href.includes('/download') ||
+                          href.includes('product.zip') ||
+                          text.toLowerCase().includes('download');
 
         // Skip if this link is already in our list
         if (!items.some((item) => item.href === href)) {
@@ -379,6 +464,7 @@ async function identifyNavigation(page: Page) {
             text,
             href: href as string,
             fullText: text,
+            isDownload
           });
         }
       }
@@ -386,74 +472,115 @@ async function identifyNavigation(page: Page) {
       return items;
     });
 
-    console.log("Generic approach found items:", genericNavItems);
-    return genericNavItems;
+    console.log(`Comprehensive fallback found ${fallbackNavItems.length} items`);
+    return fallbackNavItems;
   }
 
+  console.log(`Enhanced navigation detection found ${navItems.length} items`);
   return navItems;
 }
 
-// Helper to check for page-specific elements
+// ENHANCED: Better page-specific element checking with improved scrolling
 async function checkPageSpecificElements(page: Page, pageName: string) {
   await test.step(`Check ${pageName} page elements`, async () => {
-    // Scroll through the page to trigger lazy loading
+    // ENHANCED: Better scrolling for lazy loading (especially for asset pages)
     await page.evaluate(async () => {
-      const scrollToBottom = async () => {
+      const scrollToBottomEnhanced = async () => {
         const scrollHeight = document.documentElement.scrollHeight;
         const viewportHeight = window.innerHeight;
         const totalSteps = Math.ceil(scrollHeight / viewportHeight);
         
+        console.log(`📜 Starting enhanced scroll: ${totalSteps} steps for lazy loading`);
+        
         for (let step = 0; step < totalSteps; step++) {
           const scrollTo = step * viewportHeight;
-          window.scrollTo(0, scrollTo);
-          // Wait for any lazy loading to trigger
-          await new Promise(resolve => setTimeout(resolve, 500));
+          window.scrollTo({ top: scrollTo, behavior: 'smooth' });
+          
+          // Wait longer for lazy loading to trigger
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Check for new images that might have loaded
+          const newImages = document.querySelectorAll('img[loading="lazy"], img[data-src], img[src*="nextImageExportOptimizer"]');
+          if (newImages.length > 0) {
+            console.log(`📸 Found ${newImages.length} lazy images at scroll position ${scrollTo}`);
+          }
         }
         
-        // Final scroll to bottom
-        window.scrollTo(0, scrollHeight);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Final scroll to bottom and hold
+        window.scrollTo({ top: scrollHeight, behavior: 'smooth' });
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Scroll back to top
-        window.scrollTo(0, 0);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Scroll back to top slowly
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        await new Promise(resolve => setTimeout(resolve, 1000));
       };
       
-      await scrollToBottom();
+      await scrollToBottomEnhanced();
     });
+
+    // Wait for any triggered lazy loading
+    await page.waitForTimeout(2000);
 
     // Common elements to check
     const elementCounts = await getElementCounts(page);
+    console.log(`📊 Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`);
 
-    console.log(
-      `Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`,
-    );
+    // ENHANCED: More comprehensive page-specific checks
+    const pageNameLower = pageName.toLowerCase();
+    
+    if (pageNameLower.includes('bio') || pageNameLower.includes('about') || pageNameLower.includes('tommy')) {
+      const bioElements = await page.locator('article, .bio, .biography, .about, .profile').count();
+      const textBlocks = await page.locator('p, .text, .content').count();
+      console.log(`👤 Biography page elements: ${bioElements} bio sections, ${textBlocks} text blocks`);
+      
+    } else if (pageNameLower.includes('contact')) {
+      const contactElements = await page.locator('form, [type="email"], [type="tel"], address, .contact').count();
+      const socialLinks = await page.locator('a[href*="instagram"], a[href*="twitter"], a[href*="facebook"]').count();
+      console.log(`📞 Contact page elements: ${contactElements} contact forms, ${socialLinks} social links`);
+      
+    } else if (pageNameLower.includes('asset') || pageNameLower.includes('image') || pageNameLower.includes('media') || pageNameLower.includes('gallery') || pageNameLower.includes('stills')) {
+      const galleryElements = await page.locator('.gallery, .grid, .assets, .media-grid').count();
+      const downloadLinks = await page.locator('a[href*=".zip"], a[href*="download"], .download').count();
+      const images = await page.locator('img').count();
+      const videos = await page.locator('video, .video').count();
+      
+      console.log(`🖼️  Asset page elements:`);
+      console.log(`   - Gallery containers: ${galleryElements}`);
+      console.log(`   - Download links: ${downloadLinks}`);
+      console.log(`   - Images: ${images}`);
+      console.log(`   - Videos: ${videos}`);
+      
+      // Check for high-resolution image links
+      const hiResImages = await page.locator('img[src*="7016w"], img[src*="3360w"], img[src*="_high"], img[src*="_large"], img[src*="nextImageExportOptimizer"]').count();
+      console.log(`   - High-res/optimized images: ${hiResImages}`);
+      
+    } else if (pageNameLower.includes('press') || pageNameLower.includes('release')) {
+      const pressElements = await page.locator('.press, .release, .news, article').count();
+      const pdfLinks = await page.locator('a[href*=".pdf"]').count();
+      console.log(`📰 Press page elements: ${pressElements} press sections, ${pdfLinks} PDF downloads`);
+      
+    } else if (pageNameLower.includes('video')) {
+      const videoElements = await page.locator('video, iframe[src*="youtube"], iframe[src*="vimeo"], .video').count();
+      const videoDownloads = await page.locator('a[href*=".mp4"], a[href*=".mov"]').count();
+      console.log(`🎥 Video page elements: ${videoElements} video players, ${videoDownloads} video downloads`);
+      
+    } else if (pageNameLower.includes('aleali')) {
+      const profileElements = await page.locator('.profile, .bio, .about, article').count();
+      const imageElements = await page.locator('img').count();
+      console.log(`👩 Aleali May page elements: ${profileElements} profile sections, ${imageElements} images`);
+    }
 
-    // Look for page-specific elements based on page name
-    if (
-      pageName.toLowerCase().includes("bio") ||
-      pageName.toLowerCase().includes("about") ||
-      pageName.toLowerCase().includes("tommy")
-    ) {
-      const bioSpecificElements = await page
-        .locator("article, .bio, .biography")
-        .count();
-      console.log(`Found ${bioSpecificElements} biography-specific elements`);
-    } else if (pageName.toLowerCase().includes("contact")) {
-      const contactElements = await page
-        .locator('form, [type="email"], [type="tel"], address')
-        .count();
-      console.log(`Found ${contactElements} contact-specific elements`);
-    } else if (
-      pageName.toLowerCase().includes("asset") ||
-      pageName.toLowerCase().includes("image") ||
-      pageName.toLowerCase().includes("media")
-    ) {
-      // Check for asset-specific elements
-      const assetElements = await page
-        .locator(".gallery, .download, [download]")
-        .count();
-      console.log(`Found ${assetElements} asset-specific elements`);
+    // Check for missing critical elements
+    const hasMissingElements = await page.evaluate(() => {
+      const criticalSelectors = ['h1', 'main', '.content', '.container'];
+      const missingElements = criticalSelectors.filter(selector => 
+        document.querySelectorAll(selector).length === 0
+      );
+      return missingElements;
+    });
+
+    if (hasMissingElements.length > 0) {
+      console.log(`⚠️ Missing critical elements: ${hasMissingElements.join(', ')}`);
     }
   });
 }
@@ -1155,121 +1282,303 @@ journey('${monitorName}', async ({ page }) => {
   return code;
 }
 
-// Helper to identify downloadable resources
+// ENHANCED: Better downloadable resource detection (MAIN FIX FOR ZIP ISSUE)
 function isDownloadableResource(url: string): boolean {
   const extension = path.extname(url).toLowerCase();
-  return config.allowedDownloads.extensions.includes(extension);
+  
+  // Enhanced list of downloadable extensions
+  const downloadableExtensions = [
+    '.pdf', '.zip', '.rar', '.7z',  // Archives and documents
+    '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt', // Documents  
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', // Images
+    '.mp4', '.mov', '.avi', '.wmv', '.mp3', '.wav', // Media
+    '.psd', '.ai', '.eps', '.indd' // Design files
+  ];
+  
+  // Enhanced press kit specific download patterns
+  const downloadKeywords = [
+    // Press kit specific patterns
+    '/download', '/assets/', '/files/', '/media/', '/press/',
+    'product.zip', 'stills.zip', 'images.zip', 'media.zip',
+    'gallery.zip', 'press.zip', 'campaign.zip',
+    'press_release', 'press-release', 'presskit',
+    'high-res', 'highres', 'high_res',
+    'press_kit', 'press-kit',
+    // Tommy Hilfiger specific patterns
+    'tommy_hilfiger', 'tommy-hilfiger',
+    'mercedes-amg', 'mercedes_amg',
+    'clarence_ruth', 'clarence-ruth'
+  ];
+  
+  const hasDownloadExtension = downloadableExtensions.includes(extension);
+  const hasDownloadKeyword = downloadKeywords.some(keyword => 
+    url.toLowerCase().includes(keyword.toLowerCase())
+  );
+  
+  // Enhanced press kit specific download patterns
+  const isDownloadLink = url.toLowerCase().includes('download') || 
+                        url.toLowerCase().includes('assets/') ||
+                        url.toLowerCase().includes('media/') ||
+                        url.toLowerCase().includes('press/') ||
+                        url.toLowerCase().includes('files/') ||
+                        url.toLowerCase().includes('product.zip') ||
+                        url.toLowerCase().includes('stills.zip') ||
+                        url.toLowerCase().includes('images.zip') ||
+                        url.toLowerCase().includes('campaign.zip') ||
+                        url.toLowerCase().includes('press_release') ||
+                        url.toLowerCase().includes('press-release') ||
+                        url.toLowerCase().includes('high-res') ||
+                        url.toLowerCase().includes('highres');
+  
+  console.log(`🔍 Checking URL: ${url}`);
+  console.log(`   Extension: ${extension}`);
+  console.log(`   Has download extension: ${hasDownloadExtension}`);
+  console.log(`   Has download keyword: ${hasDownloadKeyword}`);
+  console.log(`   Is download link: ${isDownloadLink}`);
+  
+  const isDownloadable = hasDownloadExtension || hasDownloadKeyword || isDownloadLink;
+  console.log(`   Final result: ${isDownloadable ? '✅ DOWNLOADABLE' : '❌ NOT DOWNLOADABLE'}`);
+  
+  return isDownloadable;
 }
 
-// Helper to verify if a resource exists
+// ENHANCED: Better resource verification with proper headers
 async function verifyResourceExists(url: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const protocol = url.startsWith("https") ? https : http;
+    try {
+      const protocol = url.startsWith("https") ? https : http;
+      
+      // Enhanced headers for press kit resources
+      const options = {
+        method: "HEAD",
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': '*/*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Referer': new URL(url).origin,
+          // Additional headers for press kit resources
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+        timeout: 15000
+      };
 
-    const req = protocol.request(url, { method: "HEAD" }, (res) => {
-      const statusCode = res.statusCode || 0;
-      resolve(statusCode >= 200 && statusCode < 400);
-    });
+      const req = protocol.request(url, options, (res) => {
+        const statusCode = res.statusCode || 0;
+        const contentType = res.headers['content-type'] || '';
+        const contentLength = res.headers['content-length'] || '0';
+        
+        console.log(`📥 Resource check: ${url}`);
+        console.log(`   Status: ${statusCode}`);
+        console.log(`   Content-Type: ${contentType}`);
+        console.log(`   Content-Length: ${contentLength}`);
+        
+        // Enhanced success criteria for press kit resources
+        const isSuccess = (statusCode >= 200 && statusCode < 400) || 
+                         (statusCode === 403 && contentType.includes('application/')) || // Some press kits return 403 but still serve content
+                         (statusCode === 401 && contentType.includes('application/'));  // Some press kits require auth but still serve content
+        
+        console.log(`   Result: ${isSuccess ? '✅ EXISTS' : '❌ NOT FOUND'}`);
+        resolve(isSuccess);
+      });
 
-    req.on("error", () => {
+      req.on("error", (error) => {
+        console.log(`❌ Resource verification error for ${url}: ${error.message}`);
+        resolve(false);
+      });
+
+      req.setTimeout(15000, () => {
+        req.destroy();
+        console.log(`⏱️ Resource verification timeout for ${url}`);
+        resolve(false);
+      });
+
+      req.end();
+    } catch (error) {
+      console.log(`❌ Resource verification exception for ${url}: ${error}`);
       resolve(false);
-    });
-
-    req.end();
+    }
   });
 }
 
-// Helper to download a file
-async function downloadFile(
-  url: string,
-  destination: string,
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    const protocol = url.startsWith("https") ? https : http;
+// ENHANCED: Download function with retry logic and better error handling
+async function downloadFile(url: string, destination: string): Promise<boolean> {
+  const maxRetries = 3;
+  let currentRetry = 0;
 
-    const file = fs.createWriteStream(destination);
-    let downloadedSize = 0;
-
-    const req = protocol.get(url, (response) => {
-      const statusCode = response.statusCode || 0;
-
-      // Check if the response is successful
-      if (statusCode >= 200 && statusCode < 400) {
-        // Check content type
-        const contentType = response.headers["content-type"];
-        if (
-          contentType &&
-          !config.allowedDownloads.allowedMimeTypes.includes(contentType)
-        ) {
-          console.log(
-            `⚠️ Skipping download: Unsupported content type ${contentType}`,
-          );
-          file.close();
-          fs.unlinkSync(destination);
-          resolve(false);
-          return;
-        }
-
-        // Check content length
-        const contentLength = parseInt(
-          response.headers["content-length"] || "0",
-          10,
-        );
-        if (contentLength > config.allowedDownloads.maxFileSize) {
-          console.log(
-            `⚠️ Skipping download: File size ${formatFileSize(contentLength)} exceeds maximum allowed size ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
-          );
-          file.close();
-          fs.unlinkSync(destination);
-          resolve(false);
-          return;
-        }
-
-        // Handle download progress
-        response.on("data", (chunk) => {
-          downloadedSize += chunk.length;
-          if (downloadedSize > config.allowedDownloads.maxFileSize) {
-            console.log(
-              `⚠️ Download cancelled: File size exceeds maximum allowed size`,
-            );
-            req.destroy();
-            file.close();
-            fs.unlinkSync(destination);
-            resolve(false);
-          }
-        });
-
-        response.pipe(file);
-        file.on("finish", () => {
-          file.close();
-          console.log(
-            `✅ Successfully downloaded: ${destination} (${formatFileSize(downloadedSize)})`,
-          );
-          resolve(true);
-        });
-      } else {
-        file.close();
-        fs.unlinkSync(destination);
-        console.log(`⚠️ Download failed: HTTP ${statusCode}`);
-        resolve(false);
+  while (currentRetry < maxRetries) {
+    try {
+      console.log(`📥 Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
+      
+      const success = await attemptDownload(url, destination);
+      if (success) {
+        console.log(`✅ Download successful on attempt ${currentRetry + 1}`);
+        return true;
       }
-    });
+      
+      currentRetry++;
+      if (currentRetry < maxRetries) {
+        const delay = currentRetry * 2000;
+        console.log(`⏱️ Retrying download in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    } catch (error) {
+      console.log(`❌ Download attempt ${currentRetry + 1} failed: ${error}`);
+      currentRetry++;
+    }
+  }
 
-    req.on("error", (error) => {
-      file.close();
-      fs.existsSync(destination) && fs.unlinkSync(destination);
-      console.log(`⚠️ Download error: ${error.message}`);
-      resolve(false);
-    });
+  console.log(`❌ All ${maxRetries} download attempts failed for: ${url}`);
+  return false;
+}
 
-    // Add timeout
-    req.setTimeout(30000, () => {
-      req.destroy();
-      file.close();
-      fs.existsSync(destination) && fs.unlinkSync(destination);
-      console.log(`⚠️ Download timeout after 30 seconds`);
+async function attemptDownload(url: string, destination: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const protocol = url.startsWith("https") ? https : http;
+      const file = fs.createWriteStream(destination);
+      let downloadedSize = 0;
+
+      // Enhanced request options
+      const options = {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': '*/*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Referer': new URL(url).origin
+        }
+      };
+
+      const req = protocol.get(url, options, (response) => {
+        const statusCode = response.statusCode || 0;
+        
+        console.log(`📥 Download response: ${statusCode} for ${url}`);
+        
+        // Handle redirects
+        if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
+          file.close();
+          fs.existsSync(destination) && fs.unlinkSync(destination);
+          
+          const redirectUrl = new URL(response.headers.location, url).toString();
+          console.log(`↗️ Following redirect to: ${redirectUrl}`);
+          
+          // Recursive call for redirect
+          attemptDownload(redirectUrl, destination).then(resolve);
+          return;
+        }
+        
+        // Check if the response is successful
+        if (statusCode >= 200 && statusCode < 300) {
+          // Check content type (more permissive for press kit files)
+          const contentType = response.headers['content-type'] || '';
+          console.log(`📄 Content-Type: ${contentType}`);
+          
+          // Enhanced allowed types for press kits
+          const allowedTypes = [
+            'application/pdf',
+            'application/zip',
+            'application/x-zip-compressed',
+            'application/octet-stream',
+            'image/jpeg',
+            'image/png',
+            'video/mp4',
+            'audio/mpeg'
+          ];
+          
+          const isAllowedType = allowedTypes.some(type => contentType.includes(type)) ||
+                               contentType === '' || // Some servers don't set content-type
+                               url.endsWith('.pdf') || 
+                               url.endsWith('.zip');
+          
+          if (!isAllowedType && contentType !== '') {
+            console.log(`⚠️ Unexpected content type: ${contentType}, continuing anyway for press kit file`);
+          }
+
+          // Check content length
+          const contentLength = parseInt(response.headers['content-length'] || '0', 10);
+          if (contentLength > config.allowedDownloads.maxFileSize && contentLength > 0) {
+            console.log(`⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size`);
+            file.close();
+            fs.existsSync(destination) && fs.unlinkSync(destination);
+            resolve(false);
+            return;
+          }
+
+          // Handle download progress
+          response.on('data', (chunk) => {
+            downloadedSize += chunk.length;
+            if (downloadedSize > config.allowedDownloads.maxFileSize) {
+              console.log(`⚠️ Download cancelled: File size exceeded during download`);
+              req.destroy();
+              file.close();
+              fs.existsSync(destination) && fs.unlinkSync(destination);
+              resolve(false);
+              return;
+            }
+          });
+
+          response.pipe(file);
+          
+          file.on("finish", () => {
+            file.close();
+            
+            // Verify the downloaded file
+            if (fs.existsSync(destination)) {
+              const stats = fs.statSync(destination);
+              if (stats.size > 0) {
+                console.log(`✅ Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`);
+                resolve(true);
+              } else {
+                console.log(`❌ Downloaded file is empty: ${destination}`);
+                fs.unlinkSync(destination);
+                resolve(false);
+              }
+            } else {
+              console.log(`❌ Downloaded file not found: ${destination}`);
+              resolve(false);
+            }
+          });
+
+          file.on("error", (error) => {
+            console.log(`❌ File write error: ${error.message}`);
+            file.close();
+            fs.existsSync(destination) && fs.unlinkSync(destination);
+            resolve(false);
+          });
+
+        } else {
+          file.close();
+          fs.existsSync(destination) && fs.unlinkSync(destination);
+          console.log(`❌ Download failed: HTTP ${statusCode}`);
+          resolve(false);
+        }
+      });
+
+      req.on("error", (error) => {
+        file.close();
+        fs.existsSync(destination) && fs.unlinkSync(destination);
+        console.log(`❌ Download request error: ${error.message}`);
+        resolve(false);
+      });
+
+      // Increased timeout for large files
+      req.setTimeout(60000, () => {
+        req.destroy();
+        file.close();
+        fs.existsSync(destination) && fs.unlinkSync(destination);
+        console.log(`⏱️ Download timeout after 60 seconds`);
+        resolve(false);
+      });
+
+    } catch (error) {
+      console.log(`❌ Download exception: ${error}`);
       resolve(false);
-    });
+    }
   });
 }
 

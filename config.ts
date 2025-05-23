@@ -37,6 +37,9 @@ const DownloadConfigSchema = z.object({
   extensions: z.array(z.string()),
   maxFileSize: z.number(),
   allowedMimeTypes: z.array(z.string()),
+  downloadTimeout: z.number(),
+  maxRetries: z.number(),
+  retryDelay: z.number(),
 });
 
 const ConfigSchema = z.object({
@@ -46,6 +49,70 @@ const ConfigSchema = z.object({
 });
 
 type Config = z.infer<typeof ConfigSchema>;
+
+// Enhanced allowedDownloads configuration
+const enhancedAllowedDownloads = {
+  extensions: [
+    // Archives
+    ".pdf", ".zip", ".rar", ".7z",
+    
+    // Documents  
+    ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".rtf",
+    
+    // Images
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp", ".tiff",
+    
+    // Media
+    ".mp4", ".mov", ".avi", ".wmv", ".mp3", ".wav", ".m4v", ".webm",
+    
+    // Design files (common in press kits)
+    ".psd", ".ai", ".eps", ".indd", ".sketch"
+  ],
+  
+  allowedMimeTypes: [
+    // Documents
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv",
+    "text/plain",
+    
+    // Archives
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-rar-compressed",
+    "application/x-7z-compressed",
+    
+    // Images
+    "image/jpeg",
+    "image/png", 
+    "image/gif",
+    "image/webp",
+    "image/svg+xml",
+    "image/bmp",
+    "image/tiff",
+    
+    // Media
+    "video/mp4",
+    "video/quicktime",
+    "video/x-msvideo",
+    "audio/mpeg",
+    "audio/wav",
+    "video/webm",
+    
+    // Generic (for when servers don't set proper MIME types)
+    "application/octet-stream"
+  ],
+  
+  maxFileSize: 104857600, // 100MB - good for press kit files
+  
+  // Additional settings for press kits
+  downloadTimeout: 60000, // 60 seconds
+  maxRetries: 3,
+  retryDelay: 2000 // 2 seconds between retries
+};
 
 // Default configuration
 const defaultConfig: Config = {
@@ -71,9 +138,12 @@ const defaultConfig: Config = {
     trace: "on",
   },
   allowedDownloads: {
-    extensions: [".pdf", ".zip", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".jpg", ".jpeg", ".png", ".mp4", ".mp3"],
-    maxFileSize: 100 * 1024 * 1024,
-    allowedMimeTypes: ["application/pdf", "application/zip", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "image/jpeg", "image/png", "video/mp4", "audio/mpeg"]
+    extensions: enhancedAllowedDownloads.extensions,
+    maxFileSize: enhancedAllowedDownloads.maxFileSize,
+    allowedMimeTypes: enhancedAllowedDownloads.allowedMimeTypes,
+    downloadTimeout: enhancedAllowedDownloads.downloadTimeout,
+    maxRetries: enhancedAllowedDownloads.maxRetries,
+    retryDelay: enhancedAllowedDownloads.retryDelay
   }
 };
 
@@ -147,6 +217,9 @@ function loadConfigFromEnv(): Partial<Config> {
       extensions: [...defaultConfig.allowedDownloads.extensions],
       maxFileSize: defaultConfig.allowedDownloads.maxFileSize,
       allowedMimeTypes: [...defaultConfig.allowedDownloads.allowedMimeTypes],
+      downloadTimeout: defaultConfig.allowedDownloads.downloadTimeout,
+      maxRetries: defaultConfig.allowedDownloads.maxRetries,
+      retryDelay: defaultConfig.allowedDownloads.retryDelay
     }
   };
 
