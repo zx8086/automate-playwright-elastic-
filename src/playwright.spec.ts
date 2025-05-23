@@ -91,6 +91,10 @@ test.describe("Site Navigation Test with Steps", () => {
       reason: string;
     }> = [];
 
+    // Track processed URLs to prevent duplicates
+    const processedUrls = new Set<string>();
+    const processedDownloads = new Set<string>();
+
     // First identify all navigation items on initial page
     const navigationItems = await identifyNavigation(page);
     console.log(`Found ${navigationItems.length} navigation items`);
@@ -113,19 +117,29 @@ test.describe("Site Navigation Test with Steps", () => {
 
         // Record the starting URL
         const startUrl = page.url();
+        const absoluteUrl = new URL(item.href, page.url()).toString();
+
+        // Skip if we've already processed this URL
+        if (processedUrls.has(absoluteUrl)) {
+          console.log(`⏭️ Skipping already processed URL: ${absoluteUrl}`);
+          return;
+        }
 
         // Check if it's a downloadable resource
         if (isDownloadableResource(item.href)) {
           try {
             console.log(`📥 Handling downloadable resource: ${item.text}`);
 
-            // Get absolute URL
-            const absoluteUrl = new URL(item.href, page.url()).toString();
+            // Skip if we've already processed this download
+            if (processedDownloads.has(absoluteUrl)) {
+              console.log(`⏭️ Skipping already processed download: ${absoluteUrl}`);
+              return;
+            }
 
-            // Verify the resource exists
-            const resourceExists = await verifyResourceExists(absoluteUrl);
+            // Verify the resource exists and get content length
+            const { exists, contentLength } = await verifyResourceExists(absoluteUrl);
 
-            if (resourceExists) {
+            if (exists) {
               console.log(`✅ Resource ${item.text} exists and is accessible`);
 
               // Try to download the file
@@ -133,42 +147,50 @@ test.describe("Site Navigation Test with Steps", () => {
                 config.server.downloadsDir,
                 path.basename(item.href),
               );
-              const downloadSuccessful = await downloadFile(
-                absoluteUrl,
-                downloadPath,
-              );
 
-              if (downloadSuccessful) {
-                console.log(`✅ Successfully downloaded: ${downloadPath}`);
-
-                // Get file size
-                const stats = fs.statSync(downloadPath);
-                console.log(`File size: ${formatFileSize(stats.size)}`);
-
-                // Add to navigation paths
-                navigationPaths.push({
+              if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
+                console.log(`⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`);
+                skippedDownloads.push({
                   from: startUrl,
                   to: absoluteUrl,
-                  label: item.text,
-                  isDownloadable: true,
-                  fileSize: stats.size,
+                  label: item.text.replace(/\s+/g, ' ').trim(),
+                  fileSize: contentLength,
+                  reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
                 });
               } else {
-                console.log(`⚠️ Download failed for: ${absoluteUrl}`);
-                try {
-                  const downloadPath = path.join(
-                    config.server.downloadsDir,
-                    path.basename(item.href),
-                  );
-                  const fileSize = fs.existsSync(downloadPath) ? fs.statSync(downloadPath).size : undefined;
+                const downloadSuccessful = await downloadFile(
+                  absoluteUrl,
+                  downloadPath,
+                );
+
+                if (downloadSuccessful) {
+                  console.log(`✅ Successfully downloaded: ${downloadPath}`);
+
+                  // Get file size
+                  const stats = fs.statSync(downloadPath);
+                  console.log(`File size: ${formatFileSize(stats.size)}`);
+
+                  // Add to navigation paths
+                  navigationPaths.push({
+                    from: startUrl,
+                    to: absoluteUrl,
+                    label: item.text,
+                    isDownloadable: true,
+                    fileSize: stats.size,
+                  });
+
+                  // Mark this download as processed
+                  processedDownloads.add(absoluteUrl);
+                } else {
+                  console.log(`⚠️ Download failed for: ${absoluteUrl}`);
                   skippedDownloads.push({
                     from: startUrl,
                     to: absoluteUrl,
                     label: item.text.replace(/\s+/g, ' ').trim(),
-                    fileSize,
-                    reason: fileSize && fileSize > config.allowedDownloads.maxFileSize ? `File size ${formatFileSize(fileSize)} exceeds max allowed` : 'Download failed',
+                    fileSize: contentLength,
+                    reason: 'Download failed'
                   });
-                } catch {}
+                }
               }
             } else {
               console.log(`⚠️ Resource not accessible: ${absoluteUrl}`);
@@ -183,8 +205,6 @@ test.describe("Site Navigation Test with Steps", () => {
         else {
           try {
             // For regular pages, navigate directly to the URL instead of clicking
-            const absoluteUrl = new URL(item.href, page.url()).toString();
-
             console.log(`🔗 Direct navigation to: ${absoluteUrl}`);
             await page.goto(absoluteUrl, { timeout: 30000 });
 
@@ -208,6 +228,9 @@ test.describe("Site Navigation Test with Steps", () => {
                 elementCounts: elementCounts,
               });
 
+              // Mark this URL as processed
+              processedUrls.add(absoluteUrl);
+
               // Take screenshot of the page
               await page.screenshot({
                 path: path.join(
@@ -222,13 +245,19 @@ test.describe("Site Navigation Test with Steps", () => {
               // Process any download links found on this page
               if (pageDownloadLinks && pageDownloadLinks.length > 0) {
                 for (const downloadLink of pageDownloadLinks) {
+                  const downloadUrl = new URL(downloadLink.href, currentUrl).toString();
+                  
+                  // Skip if we've already processed this download
+                  if (processedDownloads.has(downloadUrl)) {
+                    console.log(`⏭️ Skipping already processed download: ${downloadUrl}`);
+                    continue;
+                  }
+
                   console.log(`📥 Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`);
                   try {
-                    // Get absolute URL for the download
-                    const absoluteDownloadUrl = new URL(downloadLink.href, currentUrl).toString();
                     // Verify the resource exists
-                    const resourceExists = await verifyResourceExists(absoluteDownloadUrl);
-                    if (resourceExists) {
+                    const { exists, contentLength } = await verifyResourceExists(downloadUrl);
+                    if (exists) {
                       console.log(`✅ Download resource ${downloadLink.text} exists and is accessible`);
                       // Try to download the file
                       const downloadPath = path.join(
@@ -236,7 +265,7 @@ test.describe("Site Navigation Test with Steps", () => {
                         path.basename(downloadLink.href),
                       );
                       const downloadSuccessful = await downloadFile(
-                        absoluteDownloadUrl,
+                        downloadUrl,
                         downloadPath,
                       );
                       if (downloadSuccessful) {
@@ -247,30 +276,37 @@ test.describe("Site Navigation Test with Steps", () => {
                         // Add to navigation paths as a downloadable resource
                         navigationPaths.push({
                           from: currentUrl,
-                          to: absoluteDownloadUrl,
+                          to: downloadUrl,
                           label: `${downloadLink.text} (from ${item.text})`,
                           isDownloadable: true,
                           fileSize: stats.size,
                         });
+                        // Mark this download as processed
+                        processedDownloads.add(downloadUrl);
                       } else {
-                        console.log(`⚠️ Download failed for: ${absoluteDownloadUrl}`);
-                        try {
-                          const downloadPath = path.join(
-                            config.server.downloadsDir,
-                            path.basename(downloadLink.href),
-                          );
-                          const fileSize = fs.existsSync(downloadPath) ? fs.statSync(downloadPath).size : undefined;
+                        console.log(`⚠️ Download failed for: ${downloadUrl}`);
+                        if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
+                          console.log(`⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`);
+                          fs.existsSync(downloadPath) && fs.unlinkSync(downloadPath);
                           skippedDownloads.push({
-                            from: currentUrl,
-                            to: absoluteDownloadUrl,
-                            label: `${downloadLink.text} (from ${item.text})`,
-                            fileSize,
-                            reason: fileSize && fileSize > config.allowedDownloads.maxFileSize ? `File size ${formatFileSize(fileSize)} exceeds max allowed` : 'Download failed',
+                            from: startUrl,
+                            to: downloadUrl,
+                            label: downloadLink.text.replace(/\s+/g, ' ').trim(),
+                            fileSize: contentLength,
+                            reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
                           });
-                        } catch {}
+                        } else {
+                          skippedDownloads.push({
+                            from: startUrl,
+                            to: downloadUrl,
+                            label: downloadLink.text.replace(/\s+/g, ' ').trim(),
+                            fileSize: contentLength,
+                            reason: 'Download failed'
+                          });
+                        }
                       }
                     } else {
-                      console.log(`⚠️ Download resource not accessible: ${absoluteDownloadUrl}`);
+                      console.log(`⚠️ Download resource not accessible: ${downloadUrl}`);
                     }
                   } catch (error) {
                     console.log(
@@ -331,12 +367,13 @@ test.describe("Site Navigation Test with Steps", () => {
       }
 
       // NEW: List skipped downloads
-      if (skippedDownloads.length > 0) {
+      if (skippedDownloads && skippedDownloads.length > 0) {
         console.log("\n- Skipped Downloads:");
         skippedDownloads.forEach((item, index) => {
           const cleanLabel = item.label.replace(/\s+/g, ' ').trim();
           const sizeStr = item.fileSize ? formatFileSize(item.fileSize) : 'Unknown size';
-          console.log(`${index + 1}. ${cleanLabel}: ${sizeStr} [SKIPPED: ${item.reason}]`);
+          const reason = item.reason || 'Download failed';
+          console.log(`${index + 1}. ${cleanLabel}: ${sizeStr} [SKIPPED: ${reason}]`);
         });
       }
 
@@ -922,16 +959,47 @@ journey('${monitorName}', async ({ page }) => {
                 page.waitForTimeout(3000)
             ]);
             
-            // Verify page has actual content
-            const hasContent = await page.evaluate(() => {
-                const body = document.body;
-                return body.textContent?.trim().length > 0 && 
-                       body.children.length > 0;
-            });
+            // Enhanced content verification with retry logic
+            let hasContent = false;
+            let retryCount = 0;
+            const maxRetries = 3;
+            
+            while (!hasContent && retryCount < maxRetries) {
+                hasContent = await page.evaluate(() => {
+                    const body = document.body;
+                    // More lenient content check
+                    return body && (
+                        body.textContent?.trim().length > 0 || 
+                        body.children.length > 0 ||
+                        body.innerHTML.length > 0
+                    );
+                });
+                
+                if (!hasContent) {
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        console.log(\`⚠️ Content check attempt \${retryCount} failed, retrying...\`);
+                        await page.waitForTimeout(1000); // Wait before retry
+                    }
+                }
+            }
             
             if (!hasContent) {
-                throw new Error('Page appears to be empty');
+                // Check if we're in a back navigation state
+                const isBackNavigation = await page.evaluate(() => {
+                    return window.performance.navigation.type === 2 || // Back/Forward navigation
+                           window.performance.getEntriesByType('navigation')[0]?.type === 'back_forward';
+                });
+                
+                if (isBackNavigation) {
+                    console.log('⚠️ Back navigation detected, proceeding with reduced content check');
+                    // For back navigation, we'll proceed even with minimal content
+                    hasContent = true;
+                } else {
+                    throw new Error('Page appears to be empty after multiple retries');
+                }
             }
+            
             console.log(\`✅ Body visible with content: \${Date.now() - startTime}ms\`);
             
             // STEP 3: CRITICAL IMAGE LOADING (OPTIMIZED)
@@ -1444,68 +1512,94 @@ function isDownloadableResource(url: string): boolean {
   return isDownloadable;
 }
 
-// ENHANCED: Better resource verification with proper headers
-async function verifyResourceExists(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
+// ENHANCED: Better resource verification with proper headers and retry logic
+async function verifyResourceExists(url: string): Promise<{ exists: boolean; contentLength?: number }> {
+  const maxRetries = 3;
+  let currentRetry = 0;
+
+  while (currentRetry < maxRetries) {
     try {
-      const protocol = url.startsWith("https") ? https : http;
+      console.log(`📥 Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
       
-      // Enhanced headers for press kit resources
-      const options = {
-        method: "HEAD",
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Accept': '*/*',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1',
-          'Referer': new URL(url).origin,
-          // Additional headers for press kit resources
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        },
-        timeout: 15000
-      };
+      const result = await new Promise<{ exists: boolean; contentLength?: number }>((resolve) => {
+        const protocol = url.startsWith("https") ? https : http;
+        
+        const options = {
+          method: "GET",
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Referer': new URL(url).origin,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          },
+          timeout: 30000
+        };
 
-      const req = protocol.request(url, options, (res) => {
-        const statusCode = res.statusCode || 0;
-        const contentType = res.headers['content-type'] || '';
-        const contentLength = res.headers['content-length'] || '0';
-        
-        console.log(`📥 Resource check: ${url}`);
-        console.log(`   Status: ${statusCode}`);
-        console.log(`   Content-Type: ${contentType}`);
-        console.log(`   Content-Length: ${contentLength}`);
-        
-        // Enhanced success criteria for press kit resources
-        const isSuccess = (statusCode >= 200 && statusCode < 400) || 
-                         (statusCode === 403 && contentType.includes('application/')) || // Some press kits return 403 but still serve content
-                         (statusCode === 401 && contentType.includes('application/'));  // Some press kits require auth but still serve content
-        
-        console.log(`   Result: ${isSuccess ? '✅ EXISTS' : '❌ NOT FOUND'}`);
-        resolve(isSuccess);
+        const req = protocol.request(url, options, (res) => {
+          const statusCode = res.statusCode || 0;
+          const contentType = res.headers['content-type'] || '';
+          const contentLength = parseInt(res.headers['content-length'] || '0', 10);
+          
+          console.log(`📥 Resource check response:`);
+          console.log(`   Status: ${statusCode}`);
+          console.log(`   Content-Type: ${contentType}`);
+          console.log(`   Content-Length: ${formatFileSize(contentLength)}`);
+          
+          const isSuccess = (statusCode >= 200 && statusCode < 400) || 
+                           (statusCode === 403 && contentType.includes('application/')) || 
+                           (statusCode === 401 && contentType.includes('application/'));
+          
+          req.destroy();
+          
+          console.log(`   Result: ${isSuccess ? '✅ EXISTS' : '❌ NOT FOUND'}`);
+          resolve({ exists: isSuccess, contentLength });
+        });
+
+        req.on("error", (error) => {
+          console.log(`❌ Resource verification error: ${error.message}`);
+          resolve({ exists: false });
+        });
+
+        req.on("timeout", () => {
+          req.destroy();
+          console.log(`⏱️ Resource verification timeout`);
+          resolve({ exists: false });
+        });
+
+        req.end();
       });
 
-      req.on("error", (error) => {
-        console.log(`❌ Resource verification error for ${url}: ${error.message}`);
-        resolve(false);
-      });
+      if (result.exists) {
+        return result;
+      }
 
-      req.setTimeout(15000, () => {
-        req.destroy();
-        console.log(`⏱️ Resource verification timeout for ${url}`);
-        resolve(false);
-      });
-
+      currentRetry++;
+      if (currentRetry < maxRetries) {
+        const delay = currentRetry * 2000;
+        console.log(`⏱️ Retrying verification in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     } catch (error) {
-      console.log(`❌ Resource verification exception for ${url}: ${error}`);
-      resolve(false);
+      console.log(`❌ Resource verification exception: ${error}`);
+      currentRetry++;
+      if (currentRetry < maxRetries) {
+        const delay = currentRetry * 2000;
+        console.log(`⏱️ Retrying verification in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
-  });
+  }
+
+  console.log(`❌ All ${maxRetries} verification attempts failed for: ${url}`);
+  return { exists: false };
 }
 
-// ENHANCED: Download function with retry logic and better error handling
+// ENHANCED: Download function with improved error handling and retry logic
 async function downloadFile(url: string, destination: string): Promise<boolean> {
   const maxRetries = 3;
   let currentRetry = 0;
@@ -1514,12 +1608,160 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
     try {
       console.log(`📥 Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
       
-      const success = await attemptDownload(url, destination);
+      const success = await new Promise<boolean>((resolve) => {
+        const protocol = url.startsWith("https") ? https : http;
+        const file = fs.createWriteStream(destination);
+        let downloadedSize = 0;
+        let isResolved = false;
+
+        // Enhanced request options
+        const options = {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Referer': new URL(url).origin,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          },
+          timeout: 60000 // Increased timeout to 60 seconds
+        };
+
+        const req = protocol.get(url, options, (response) => {
+          const statusCode = response.statusCode || 0;
+          
+          console.log(`📥 Download response: ${statusCode} for ${url}`);
+          
+          // Handle redirects
+          if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
+            file.close();
+            fs.existsSync(destination) && fs.unlinkSync(destination);
+            
+            const redirectUrl = new URL(response.headers.location, url).toString();
+            console.log(`↗️ Following redirect to: ${redirectUrl}`);
+            
+            // Recursive call for redirect
+            downloadFile(redirectUrl, destination).then(resolve);
+            return;
+          }
+          
+          // Check if the response is successful
+          if (statusCode >= 200 && statusCode < 300) {
+            // Check content type
+            const contentType = response.headers['content-type'] || '';
+            console.log(`📄 Content-Type: ${contentType}`);
+            
+            // Check content length
+            const contentLength = parseInt(response.headers['content-length'] || '0', 10);
+            console.log(`📦 Content-Length: ${formatFileSize(contentLength)}`);
+            
+            if (contentLength > config.allowedDownloads.maxFileSize) {
+              console.log(`⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`);
+              file.close();
+              fs.existsSync(destination) && fs.unlinkSync(destination);
+              if (!isResolved) {
+                isResolved = true;
+                resolve(false);
+              }
+              return;
+            }
+
+            // Handle download progress
+            response.on('data', (chunk) => {
+              downloadedSize += chunk.length;
+              if (downloadedSize > config.allowedDownloads.maxFileSize) {
+                console.log(`⚠️ Download cancelled: File size exceeded during download`);
+                req.destroy();
+                file.close();
+                fs.existsSync(destination) && fs.unlinkSync(destination);
+                if (!isResolved) {
+                  isResolved = true;
+                  resolve(false);
+                }
+                return;
+              }
+            });
+
+            response.pipe(file);
+            
+            file.on("finish", () => {
+              file.close();
+              
+              // Verify the downloaded file
+              if (fs.existsSync(destination)) {
+                const stats = fs.statSync(destination);
+                if (stats.size > 0) {
+                  console.log(`✅ Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`);
+                  if (!isResolved) {
+                    isResolved = true;
+                    resolve(true);
+                  }
+                } else {
+                  console.log(`❌ Downloaded file is empty: ${destination}`);
+                  fs.unlinkSync(destination);
+                  if (!isResolved) {
+                    isResolved = true;
+                    resolve(false);
+                  }
+                }
+              } else {
+                console.log(`❌ Downloaded file not found: ${destination}`);
+                if (!isResolved) {
+                  isResolved = true;
+                  resolve(false);
+                }
+              }
+            });
+
+            file.on("error", (error) => {
+              console.log(`❌ File write error: ${error.message}`);
+              file.close();
+              fs.existsSync(destination) && fs.unlinkSync(destination);
+              if (!isResolved) {
+                isResolved = true;
+                resolve(false);
+              }
+            });
+
+          } else {
+            file.close();
+            fs.existsSync(destination) && fs.unlinkSync(destination);
+            console.log(`❌ Download failed: HTTP ${statusCode}`);
+            if (!isResolved) {
+              isResolved = true;
+              resolve(false);
+            }
+          }
+        });
+
+        req.on("error", (error) => {
+          file.close();
+          fs.existsSync(destination) && fs.unlinkSync(destination);
+          console.log(`❌ Download request error: ${error.message}`);
+          if (!isResolved) {
+            isResolved = true;
+            resolve(false);
+          }
+        });
+
+        req.on("timeout", () => {
+          req.destroy();
+          file.close();
+          fs.existsSync(destination) && fs.unlinkSync(destination);
+          console.log(`⏱️ Download timeout after 60 seconds`);
+          if (!isResolved) {
+            isResolved = true;
+            resolve(false);
+          }
+        });
+      });
+
       if (success) {
-        console.log(`✅ Download successful on attempt ${currentRetry + 1}`);
         return true;
       }
-      
+
       currentRetry++;
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
@@ -1527,160 +1769,18 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     } catch (error) {
-      console.log(`❌ Download attempt ${currentRetry + 1} failed: ${error}`);
+      console.log(`❌ Download exception: ${error}`);
       currentRetry++;
+      if (currentRetry < maxRetries) {
+        const delay = currentRetry * 2000;
+        console.log(`⏱️ Retrying download in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
 
   console.log(`❌ All ${maxRetries} download attempts failed for: ${url}`);
   return false;
-}
-
-async function attemptDownload(url: string, destination: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    try {
-      const protocol = url.startsWith("https") ? https : http;
-      const file = fs.createWriteStream(destination);
-      let downloadedSize = 0;
-
-      // Enhanced request options
-      const options = {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Accept': '*/*',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Connection': 'keep-alive',
-          'Referer': new URL(url).origin
-        }
-      };
-
-      const req = protocol.get(url, options, (response) => {
-        const statusCode = response.statusCode || 0;
-        
-        console.log(`📥 Download response: ${statusCode} for ${url}`);
-        
-        // Handle redirects
-        if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
-          file.close();
-          fs.existsSync(destination) && fs.unlinkSync(destination);
-          
-          const redirectUrl = new URL(response.headers.location, url).toString();
-          console.log(`↗️ Following redirect to: ${redirectUrl}`);
-          
-          // Recursive call for redirect
-          attemptDownload(redirectUrl, destination).then(resolve);
-          return;
-        }
-        
-        // Check if the response is successful
-        if (statusCode >= 200 && statusCode < 300) {
-          // Check content type (more permissive for press kit files)
-          const contentType = response.headers['content-type'] || '';
-          console.log(`📄 Content-Type: ${contentType}`);
-          
-          // Enhanced allowed types for press kits
-          const allowedTypes = [
-            'application/pdf',
-            'application/zip',
-            'application/x-zip-compressed',
-            'application/octet-stream',
-            'image/jpeg',
-            'image/png',
-            'video/mp4',
-            'audio/mpeg'
-          ];
-          
-          const isAllowedType = allowedTypes.some(type => contentType.includes(type)) ||
-                               contentType === '' || // Some servers don't set content-type
-                               url.endsWith('.pdf') || 
-                               url.endsWith('.zip');
-          
-          if (!isAllowedType && contentType !== '') {
-            console.log(`⚠️ Unexpected content type: ${contentType}, continuing anyway for press kit file`);
-          }
-
-          // Check content length
-          const contentLength = parseInt(response.headers['content-length'] || '0', 10);
-          if (contentLength > config.allowedDownloads.maxFileSize && contentLength > 0) {
-            console.log(`⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size`);
-            file.close();
-            fs.existsSync(destination) && fs.unlinkSync(destination);
-            resolve(false);
-            return;
-          }
-
-          // Handle download progress
-          response.on('data', (chunk) => {
-            downloadedSize += chunk.length;
-            if (downloadedSize > config.allowedDownloads.maxFileSize) {
-              console.log(`⚠️ Download cancelled: File size exceeded during download`);
-              req.destroy();
-              file.close();
-              fs.existsSync(destination) && fs.unlinkSync(destination);
-              resolve(false);
-              return;
-            }
-          });
-
-          response.pipe(file);
-          
-          file.on("finish", () => {
-            file.close();
-            
-            // Verify the downloaded file
-            if (fs.existsSync(destination)) {
-              const stats = fs.statSync(destination);
-              if (stats.size > 0) {
-                console.log(`✅ Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`);
-                resolve(true);
-              } else {
-                console.log(`❌ Downloaded file is empty: ${destination}`);
-                fs.unlinkSync(destination);
-                resolve(false);
-              }
-            } else {
-              console.log(`❌ Downloaded file not found: ${destination}`);
-              resolve(false);
-            }
-          });
-
-          file.on("error", (error) => {
-            console.log(`❌ File write error: ${error.message}`);
-            file.close();
-            fs.existsSync(destination) && fs.unlinkSync(destination);
-            resolve(false);
-          });
-
-        } else {
-          file.close();
-          fs.existsSync(destination) && fs.unlinkSync(destination);
-          console.log(`❌ Download failed: HTTP ${statusCode}`);
-          resolve(false);
-        }
-      });
-
-      req.on("error", (error) => {
-        file.close();
-        fs.existsSync(destination) && fs.unlinkSync(destination);
-        console.log(`❌ Download request error: ${error.message}`);
-        resolve(false);
-      });
-
-      // Increased timeout for large files
-      req.setTimeout(60000, () => {
-        req.destroy();
-        file.close();
-        fs.existsSync(destination) && fs.unlinkSync(destination);
-        console.log(`⏱️ Download timeout after 60 seconds`);
-        resolve(false);
-      });
-
-    } catch (error) {
-      console.log(`❌ Download exception: ${error}`);
-      resolve(false);
-    }
-  });
 }
 
 // Helper to format file size

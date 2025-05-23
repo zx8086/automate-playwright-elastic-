@@ -226,29 +226,29 @@ function loadConfigFromEnv(): Partial<Config> {
   // Load server config
   Object.entries(envVarMapping.server).forEach(([key, envVar]) => {
     const value = process.env[envVar];
-    console.log(`Checking ${envVar}:`, value);
+    // console.log(`Checking ${envVar}:`, value);
     if (value !== undefined && config.server) {
       const type = typeof defaultConfig.server[key as keyof typeof defaultConfig.server];
       (config.server as any)[key] = parseEnvVar(value, type as "string" | "number" | "boolean" | "array");
-      console.log(`Set ${key} to:`, (config.server as any)[key]);
+        // console.log(`Set ${key} to:`, (config.server as any)[key]);
     }
   });
 
   // Load browser config
   Object.entries(envVarMapping.browser).forEach(([key, envVar]) => {
     const value = process.env[envVar];
-    console.log(`Checking ${envVar}:`, value);
+    // console.log(`Checking ${envVar}:`, value);
     if (value !== undefined && config.browser) {
       if (key === "viewport.width" && config.browser.viewport) {
         config.browser.viewport.width = parseEnvVar(value, "number");
-        console.log(`Set viewport.width to:`, config.browser.viewport.width);
+        // console.log(`Set viewport.width to:`, config.browser.viewport.width);
       } else if (key === "viewport.height" && config.browser.viewport) {
         config.browser.viewport.height = parseEnvVar(value, "number");
-        console.log(`Set viewport.height to:`, config.browser.viewport.height);
+        // console.log(`Set viewport.height to:`, config.browser.viewport.height);
       } else {
         const type = typeof defaultConfig.browser[key as keyof typeof defaultConfig.browser];
         (config.browser as any)[key] = parseEnvVar(value, type as "string" | "number" | "boolean" | "array");
-        console.log(`Set ${key} to:`, (config.browser as any)[key]);
+        // console.log(`Set ${key} to:`, (config.browser as any)[key]);
       }
     }
   });
@@ -256,15 +256,15 @@ function loadConfigFromEnv(): Partial<Config> {
   // Load downloads config
   Object.entries(envVarMapping.allowedDownloads).forEach(([key, envVar]) => {
     const value = process.env[envVar];
-    console.log(`Checking ${envVar}:`, value);
+    // console.log(`Checking ${envVar}:`, value);
     if (value !== undefined && config.allowedDownloads) {
       const type = typeof defaultConfig.allowedDownloads[key as keyof typeof defaultConfig.allowedDownloads];
       (config.allowedDownloads as any)[key] = parseEnvVar(value, type as "string" | "number" | "boolean" | "array");
-      console.log(`Set ${key} to:`, (config.allowedDownloads as any)[key]);
+      // console.log(`Set ${key} to:`, (config.allowedDownloads as any)[key]);
     }
   });
 
-  console.log('Final config:', JSON.stringify(config, null, 2));
+  // console.log('Final config:', JSON.stringify(config, null, 2));
   return config;
 }
 
