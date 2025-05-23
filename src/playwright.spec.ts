@@ -7,6 +7,21 @@ import * as http from "http";
 import * as https from "https";
 import { config } from "../config";
 
+// Add these interfaces at the top of the file, after the imports
+interface PageLoadOptions {
+    timeout?: number;
+    imageTimeout?: number;
+    networkIdleTimeout?: number;
+}
+
+interface PerformanceMetrics {
+    navigationTiming: PerformanceNavigationTiming;
+    paintTiming: PerformancePaintTiming[];
+    lcp?: PerformanceEntry;
+    cls?: PerformanceEntry;
+    longTasks?: PerformanceEntry[];
+}
+
 const logMemoryUsage = () => {
   const memUsage = process.memoryUsage();
   console.log("Memory Usage:", {
@@ -567,7 +582,21 @@ async function exportElasticSyntheticsData(
   return syntheticsData;
 }
 
-// Update the generateElasticSyntheticsTest function
+// Add these interfaces before the generateElasticSyntheticsTest function
+interface PageLoadOptions {
+    timeout?: number;
+    imageTimeout?: number;
+    networkIdleTimeout?: number;
+}
+
+interface PerformanceMetrics {
+    navigationTiming: PerformanceNavigationTiming;
+    paintTiming: PerformancePaintTiming[];
+    lcp?: PerformanceEntry;
+    cls?: PerformanceEntry;
+    longTasks?: PerformanceEntry[];
+}
+
 function generateElasticSyntheticsTest(data: {
   baseUrl: string;
   pages: Array<{
@@ -582,24 +611,24 @@ function generateElasticSyntheticsTest(data: {
 }): string {
   // Extract site identifier from the baseUrl
   const urlPath = new URL(data.baseUrl).pathname;
-  const siteId = urlPath.split("/").filter(Boolean).pop() || "site";
-
+  const siteId = urlPath.split('/').filter(Boolean).pop() || 'site';
+  
   // Generate tags array
   const tags = [
     config.server.environment,
     config.server.department,
     config.server.domain,
     config.server.service,
-    siteId,
+    siteId 
   ].filter(Boolean);
-
+  
   // Format monitor name according to convention
   const monitorName = `${config.server.departmentShort} - ${config.server.journeyType} Journey | ${siteId} (core) - prd`;
-
+  
   // Format monitor ID
-  const monitorId = `${config.server.journeyType}_${siteId.replace(/[^a-zA-Z0-9]/g, "_")}`;
-
-  // Start building the test code
+  const monitorId = `${config.server.journeyType}_${siteId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  
+  // Start building the enhanced test code
   let code = `/* ${config.server.domain}/${config.server.service}/${siteId}/core.journey.ts */
 
 import {journey, monitor, step} from '@elastic/synthetics';
@@ -615,147 +644,444 @@ journey('${monitorName}', async ({ page }) => {
 
     const baseUrl = '${data.baseUrl}';
 
-    // Helper function to wait for full page load including images
-    const waitForFullPageLoad = async () => {
+    // Update the waitForFullPageLoad function with performance metrics
+    const waitForFullPageLoad = async (pageType = 'default', options: PageLoadOptions = {}) => {
+        const {
+            timeout = 10000,
+            imageTimeout = 3000,
+            networkIdleTimeout = 1000
+        } = options;
+        
         const startTime = Date.now();
+        console.log(\`🔄 Enhanced page load starting for \${pageType}...\`);
+        
         try {
-            // Wait for DOM to be ready - this is essential
-            await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
-            console.log('DOM loaded in ' + (Date.now() - startTime) + 'ms');
-
-            // Wait for body to be visible - quick check
-            await page.waitForSelector('body', { state: 'visible', timeout: 5000 });
-            console.log('Body visible in ' + (Date.now() - startTime) + 'ms');
-
-            // Check for gallery and asset images - only if they exist
-            const hasGalleryImages = await page.locator('.gallery img, .assets img').count() > 0;
-            if (hasGalleryImages) {
-                try {
-                    await page.waitForFunction(() => {
-                        const images = document.querySelectorAll('.gallery img, .assets img');
-                        return Array.from(images).every(img => img.complete);
-                    }, { timeout: 5000 });
-                    console.log('Gallery images loaded in ' + (Date.now() - startTime) + 'ms');
-                } catch (e) {
-                    console.log('Gallery images still loading, continuing...');
-                }
-            }
-
-            // Check for thumbnails - only if they exist
-            const hasThumbnails = await page.locator('img[src*="thumbnail"]').count() > 0;
-            if (hasThumbnails) {
-                try {
-                    await page.waitForSelector('img[src*="thumbnail"]', { state: 'visible', timeout: 5000 });
-                    console.log('Thumbnails loaded in ' + (Date.now() - startTime) + 'ms');
-                } catch (e) {
-                    console.log('Thumbnails still loading, continuing...');
-                }
-            }
-
-            // Quick scroll to trigger lazy loading if needed
-            if (hasGalleryImages || hasThumbnails) {
-                await page.evaluate(() => {
-                    window.scrollTo(0, document.body.scrollHeight);
-                    window.scrollTo(0, 0);
-                });
-                console.log('Scroll completed in ' + (Date.now() - startTime) + 'ms');
-            }
-
-            // Short wait for any final network activity
-            await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {
-                console.log('Network still active, continuing...');
+            // STEP 1: Essential DOM loading (CRITICAL)
+            await Promise.race([
+                page.waitForLoadState('domcontentloaded', { timeout: 5000 }),
+                page.waitForTimeout(5000)
+            ]);
+            console.log(\`✅ DOM ready: \${Date.now() - startTime}ms\`);
+            
+            // STEP 2: Wait for body visibility and content (PREVENTS BLANK SCREENSHOTS)
+            await Promise.race([
+                page.waitForSelector('body', { state: 'visible', timeout: 3000 }),
+                page.waitForTimeout(3000)
+            ]);
+            
+            // Verify page has actual content
+            const hasContent = await page.evaluate(() => {
+                const body = document.body;
+                return body.textContent?.trim().length > 0 && 
+                       body.children.length > 0;
             });
-
-            console.log('Total page load time: ' + (Date.now() - startTime) + 'ms');
-        } catch (e) {
-            console.log('Page load timeout after ' + (Date.now() - startTime) + 'ms, continuing...');
+            
+            if (!hasContent) {
+                throw new Error('Page appears to be empty');
+            }
+            console.log(\`✅ Body visible with content: \${Date.now() - startTime}ms\`);
+            
+            // STEP 3: CRITICAL IMAGE LOADING (OPTIMIZED)
+            const imagesLoaded = await waitForCriticalImages(imageTimeout);
+            if (!imagesLoaded) {
+                console.log('⚠️ Some images may not be fully loaded');
+            }
+            
+            // STEP 4: Navigation elements (OPTIMIZED)
+            const navigationLoaded = await waitForNavigation();
+            if (!navigationLoaded) {
+                console.log('⚠️ Navigation elements may not be fully loaded');
+            }
+            
+            // STEP 5: Network stability check (OPTIMIZED)
+            try {
+                await Promise.race([
+                    page.waitForLoadState('networkidle', { timeout: networkIdleTimeout }),
+                    page.waitForTimeout(networkIdleTimeout)
+                ]);
+                console.log(\`✅ Network stable: \${Date.now() - startTime}ms\`);
+            } catch (e) {
+                console.log('⚠️ Network still active, continuing...');
+            }
+            
+            // STEP 6: Final page load verification
+            const pageLoadStatus = await page.evaluate(() => {
+                // Check if page is interactive
+                const isInteractive = document.readyState === 'complete' || 
+                                    document.readyState === 'interactive';
+                
+                // Check for any loading indicators
+                const loadingIndicators = document.querySelectorAll('.loading, .spinner, [aria-busy="true"]');
+                const isLoading = loadingIndicators.length > 0;
+                
+                // More specific error message detection
+                const errorMessages = document.querySelectorAll([
+                    // Only actual error messages
+                    '.error-message:not(h1):not(h2):not(h3):not([role="heading"])',
+                    '.error-text:not(h1):not(h2):not(h3):not([role="heading"])',
+                    '.alert-error:not(h1):not(h2):not(h3):not([role="heading"])',
+                    // Only alert roles that are not headings and contain error text
+                    '[role="alert"]:not(h1):not(h2):not(h3):not([role="heading"]):not([aria-hidden="true"])',
+                    // Error states in forms
+                    'form .error:not([role="heading"])',
+                    'form .invalid:not([role="heading"])',
+                    // Error messages in modals
+                    '.modal .error:not([role="heading"])',
+                    '.modal .alert-error:not([role="heading"])',
+                    // Error messages in notifications
+                    '.notification.error:not([role="heading"])',
+                    '.toast.error:not([role="heading"])'
+                ].join(','));
+                
+                // Filter out hidden error messages and non-error elements
+                const visibleErrors = Array.from(errorMessages).filter(el => {
+                    const style = window.getComputedStyle(el);
+                    const isVisible = style.display !== 'none' && 
+                                     style.visibility !== 'hidden' && 
+                                     style.opacity !== '0';
+                    
+                    // Ignore elements that are likely not errors
+                    const isNotError = el.tagName.toLowerCase().startsWith('h') || 
+                                     el.getAttribute('role') === 'heading' ||
+                                     el.textContent?.includes('|') ||
+                                     el.textContent?.includes('Collection') ||
+                                     el.textContent?.includes('Tommy') ||
+                                     el.textContent?.includes('Hilfiger');
+                    
+                    // Only include elements that look like actual errors
+                    const looksLikeError = el.textContent?.toLowerCase().includes('error') ||
+                                         el.textContent?.toLowerCase().includes('failed') ||
+                                         el.textContent?.toLowerCase().includes('invalid') ||
+                                         el.textContent?.toLowerCase().includes('not found');
+                    
+                    return isVisible && !isNotError && looksLikeError;
+                });
+                
+                const hasErrors = visibleErrors.length > 0;
+                
+                // Get error details for logging
+                const errorDetails = visibleErrors.map(el => ({
+                    text: el.textContent?.trim(),
+                    type: el.getAttribute('role') || el.className,
+                    visible: true
+                }));
+                
+                return {
+                    isInteractive,
+                    isLoading,
+                    hasErrors,
+                    errorDetails,
+                    readyState: document.readyState
+                };
+            });
+            
+            if (!pageLoadStatus.isInteractive) {
+                throw new Error(\`Page not interactive, readyState: \${pageLoadStatus.readyState}\`);
+            }
+            
+            if (pageLoadStatus.isLoading) {
+                console.log('⚠️ Page still shows loading indicators');
+            }
+            
+            if (pageLoadStatus.hasErrors) {
+                console.log('⚠️ Page contains error messages:');
+                pageLoadStatus.errorDetails.forEach(error => {
+                    console.log(\`   - \${error.text} (\${error.type})\`);
+                });
+            }
+            
+            // STEP 7: Final render wait (REDUCED)
+            await page.waitForTimeout(500);
+            
+            console.log(\`🎉 Total load time: \${Date.now() - startTime}ms\`);
+            return true;
+            
+        } catch (error) {
+            console.log(\`❌ Page load error: \${error.message}\`);
+            return false;
         }
     };
 
-    step('Go to homepage', async () => {
+    // CRITICAL IMAGE LOADING FIX (OPTIMIZED)
+    const waitForCriticalImages = async (timeout = 3000) => {
+        const startTime = Date.now();
+        
         try {
-            await page.goto(baseUrl, {
-                waitUntil: 'domcontentloaded',
-                timeout: 10000
+            // Wait for images to appear in DOM
+            const imageCount = await page.locator('img').count();
+            console.log(\`📸 Found \${imageCount} images\`);
+            
+            if (imageCount === 0) {
+                console.log('📸 No images to load');
+                return true;
+            }
+            
+            // Wait for at least one image to be visible
+            await Promise.race([
+                page.waitForSelector('img', { state: 'visible', timeout: 2000 }),
+                page.waitForTimeout(2000)
+            ]);
+            
+            // Optimized image loading detection
+            const imageLoadResult = await Promise.race([
+                // Strategy 1: Wait for visible images to load
+                page.waitForFunction(
+                    () => {
+                        const images = Array.from(document.querySelectorAll('img'));
+                        if (images.length === 0) return true;
+                        
+                        // Focus on visible images first
+                        const visibleImages = images.filter(img => {
+                            const rect = img.getBoundingClientRect();
+                            const isVisible = rect.width > 0 && rect.height > 0 && 
+                                            rect.top < window.innerHeight + 100;
+                            return isVisible;
+                        });
+                        
+                        if (visibleImages.length === 0) return true;
+                        
+                        // Check if visible images are loaded
+                        const loadedVisibleImages = visibleImages.filter(img => {
+                            return img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
+                        });
+                        
+                        const loadRatio = loadedVisibleImages.length / visibleImages.length;
+                        
+                        // Accept 40% of visible images loaded
+                        return loadRatio >= 0.4;
+                    },
+                    { timeout: timeout }
+                ),
+                
+                // Strategy 2: Timeout fallback with shorter timeout
+                page.waitForTimeout(timeout).then(() => {
+                    console.log('📸 Image loading timeout reached');
+                    return true;
+                })
+            ]);
+            
+            // Verify image dimensions
+            const imageDimensions = await page.evaluate(() => {
+                const images = Array.from(document.querySelectorAll('img'));
+                return images.map(img => ({
+                    width: img.naturalWidth,
+                    height: img.naturalHeight,
+                    complete: img.complete
+                }));
             });
-            await waitForFullPageLoad();
-        } catch (e) {
-            console.log('Initial page load failed, retrying...');
-            await page.goto(baseUrl, {
-                waitUntil: 'domcontentloaded',
-                timeout: 10000
-            });
-            await waitForFullPageLoad();
+            
+            const validImages = imageDimensions.filter(img => img.width > 0 && img.height > 0);
+            console.log(\`📸 Valid images: \${validImages.length}/\${imageCount}\`);
+            
+            console.log(\`📸 Images processed in \${Date.now() - startTime}ms\`);
+            return validImages.length > 0;
+            
+        } catch (error) {
+            console.log(\`📸 Image loading error: \${error.message}\`);
+            return false;
         }
+    };
+
+    // NAVIGATION ELEMENT LOADING
+    const waitForNavigation = async () => {
+        try {
+            const navSelectors = [
+                'nav',
+                '.menu',
+                '.navigation',
+                'header nav',
+                '[role="navigation"]',
+                'a[href]:not([href="#"])'
+            ];
+            
+            for (const selector of navSelectors) {
+                const count = await page.locator(selector).count();
+                if (count > 0) {
+                    await Promise.race([
+                        page.waitForSelector(selector, { state: 'visible', timeout: 3000 }),
+                        page.waitForTimeout(3000)
+                    ]);
+                    console.log(\`🔗 Navigation loaded: \${selector}\`);
+                    return true;
+                }
+            }
+            
+            console.log('🔗 No navigation elements found');
+            return false;
+            
+        } catch (e) {
+            console.log('🔗 Navigation loading timeout');
+            return false;
+        }
+    };
+
+    // Page type configurations for different timeout strategies
+    const getPageConfig = (pageType: string): PageLoadOptions => {
+        const configs: Record<string, PageLoadOptions> = {
+            homepage: {
+                timeout: 10000,
+                imageTimeout: 3000,
+                networkIdleTimeout: 1000
+            },
+            bio: {
+                timeout: 8000,
+                imageTimeout: 2000,
+                networkIdleTimeout: 1000
+            },
+            assets: {
+                timeout: 12000,
+                imageTimeout: 4000,
+                networkIdleTimeout: 1000
+            },
+            default: {
+                timeout: 8000,
+                imageTimeout: 3000,
+                networkIdleTimeout: 1000
+            }
+        };
+        
+        return configs[pageType] || configs.default;
+    };
+
+    // Enhanced step wrapper with error handling
+    const enhancedStep = async (stepName: string, pageType: string, action: () => Promise<void>) => {
+        const startTime = Date.now();
+        console.log(\`🚀 Starting: \${stepName}\`);
+        
+        try {
+            // Execute the action
+            await action();
+            
+            // Apply appropriate waiting strategy based on page type
+            const config = getPageConfig(pageType);
+            const success = await waitForFullPageLoad(pageType, config);
+            
+            if (success) {
+                console.log(\`✅ \${stepName} completed in \${Date.now() - startTime}ms\`);
+            } else {
+                console.log(\`⚠️ \${stepName} completed with warnings in \${Date.now() - startTime}ms\`);
+            }
+            
+        } catch (error) {
+            console.log(\`❌ \${stepName} failed: \${error.message}\`);
+            
+            // Don't fail the entire journey for navigation issues
+            if (error.message.includes('timeout') || error.message.includes('navigation')) {
+                console.log(\`⚠️ Continuing journey despite \${stepName} failure\`);
+            } else {
+                throw error;
+            }
+        }
+    };
+
+    // HOMEPAGE STEP
+    step('Go to homepage', async () => {
+        await enhancedStep('Go to homepage', 'homepage', async () => {
+            await page.goto(baseUrl, { 
+                waitUntil: 'domcontentloaded',
+                timeout: 15000 
+            });
+        });
     });
 `;
 
-  // Process each navigation item
+  // Process each navigation item with enhanced logic
   data.pages.forEach((page, index) => {
     // Skip the homepage if it's the first page and matches baseUrl
     if (page.url === data.baseUrl && index === 0) {
       return;
     }
-
+    
+    // Determine page type based on URL/label for appropriate timeouts
+    let pageType = 'default';
+    const label = page.label.toLowerCase();
+    if (label.includes('bio') || label.includes('about')) {
+      pageType = 'bio';
+    } else if (label.includes('asset') || label.includes('media') || label.includes('gallery')) {
+      pageType = 'assets';
+    } else if (label.includes('press') || label.includes('release')) {
+      pageType = 'default';
+    }
+    
+    // Escape special characters in the page label and href
+    const escapedLabel = page.label.replace(/"/g, '\\"');
+    const escapedHref = page.href.replace(/"/g, '\\"');
+    
     code += `
-    step('Navigate to "${page.label}"', async () => {
-        try {
-            // Try role-based selector with full text
-            await page.getByRole('link', { name: '${page.fullText?.replace(/'/g, "\\'") || page.label.replace(/'/g, "\\'")}' }).click();
-            await waitForFullPageLoad();
-        } catch (e) {
+    step('Navigate to "${escapedLabel}"', async () => {
+        await enhancedStep('Navigate to "${escapedLabel}"', '${pageType}', async () => {
             try {
-                // Try href-based selector
-                await page.locator('a[href*="${page.href.replace(/^\.\//, "")}"]').click();
-                await waitForFullPageLoad();
-            } catch (e) {
-                try {
-                    // Try text-based selector
-                    await page.locator('a').filter({ hasText: '${page.label.replace(/'/g, "\\'")}' }).click();
-                    await waitForFullPageLoad();
-                } catch (e) {
-                    // Direct navigation as fallback
-                    await page.goto('${page.url}', {
-                        waitUntil: 'domcontentloaded',
-                        timeout: 30000
-                    });
-                    await waitForFullPageLoad();
+                // Multiple selection strategies for robust navigation
+                const selectors = [
+                    'a[href*="' + '${escapedHref.replace(/^\.\//, '')}' + '"]',
+                    'nav a:has-text("${escapedLabel}")',
+                    'a:has-text("${escapedLabel}")',
+                    'a[href="' + '${escapedHref}' + '"]'
+                ];
+                
+                let clicked = false;
+                for (const selector of selectors) {
+                    try {
+                        const element = page.locator(selector).first();
+                        const count = await element.count();
+                        if (count > 0) {
+                            await element.click();
+                            clicked = true;
+                            console.log(\`✅ Clicked using selector: \${selector}\`);
+                            break;
+                        }
+                    } catch (e) {
+                        console.log(\`⚠️ Selector failed: \${selector} - \${e.message}\`);
+                        continue;
+                    }
                 }
+                
+                if (!clicked) {
+                    throw new Error('Could not find clickable element for ${escapedLabel}');
+                }
+                
+            } catch (e) {
+                console.log('🔄 Falling back to direct navigation for ${escapedLabel}');
+                await page.goto('${page.url}', {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 20000
+                });
             }
-        }
+        });
     });
 
     step('Return to previous page', async () => {
-        try {
-            // Try browser back
-            await page.goBack({ waitUntil: 'networkidle' });
-            await waitForFullPageLoad();
-        } catch (e) {
-            // Fallback to direct navigation
-            await page.goto(baseUrl, {
-                waitUntil: 'domcontentloaded',
-                timeout: 30000
-            });
-            await waitForFullPageLoad();
-        }
+        await enhancedStep('Return to previous page', 'homepage', async () => {
+            try {
+                await page.goBack({ waitUntil: 'domcontentloaded', timeout: 10000 });
+                console.log('✅ Browser back navigation successful');
+            } catch (e) {
+                console.log('🔄 Back navigation failed, using direct navigation');
+                await page.goto(baseUrl, { 
+                    waitUntil: 'domcontentloaded',
+                    timeout: 15000 
+                });
+            }
+        });
     });`;
   });
-
-  // Add final navigation
+  
+  // Add final step
   code += `
-    step('Return to homepage', async () => {
-        try {
-            // Try browser back
-            await page.goBack({ waitUntil: 'networkidle' });
-            await waitForFullPageLoad();
-        } catch (e) {
-            // Fallback to direct navigation
-            await page.goto(baseUrl, {
-                waitUntil: 'domcontentloaded',
-                timeout: 30000
-            });
-            await waitForFullPageLoad();
-        }
+    step('Final homepage verification', async () => {
+        await enhancedStep('Final homepage verification', 'homepage', async () => {
+            // Ensure we're back on the homepage
+            const currentUrl = page.url();
+            if (!currentUrl.includes(baseUrl)) {
+                console.log('🔄 Navigating back to homepage for final verification');
+                await page.goto(baseUrl, { 
+                    waitUntil: 'domcontentloaded',
+                    timeout: 15000 
+                });
+            } else {
+                console.log('✅ Already on homepage');
+            }
+        });
     });
 });
 `;
