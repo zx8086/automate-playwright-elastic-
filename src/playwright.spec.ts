@@ -80,6 +80,15 @@ test.describe("Site Navigation Test with Steps", () => {
         buttons: number;
       };
       fullText?: string;
+      skippedReason?: string;
+    }> = [];
+
+    const skippedDownloads: Array<{
+      from: string;
+      to: string;
+      label: string;
+      fileSize?: number;
+      reason: string;
     }> = [];
 
     // First identify all navigation items on initial page
@@ -146,6 +155,20 @@ test.describe("Site Navigation Test with Steps", () => {
                 });
               } else {
                 console.log(`⚠️ Download failed for: ${absoluteUrl}`);
+                try {
+                  const downloadPath = path.join(
+                    config.server.downloadsDir,
+                    path.basename(item.href),
+                  );
+                  const fileSize = fs.existsSync(downloadPath) ? fs.statSync(downloadPath).size : undefined;
+                  skippedDownloads.push({
+                    from: startUrl,
+                    to: absoluteUrl,
+                    label: item.text.replace(/\s+/g, ' ').trim(),
+                    fileSize,
+                    reason: fileSize && fileSize > config.allowedDownloads.maxFileSize ? `File size ${formatFileSize(fileSize)} exceeds max allowed` : 'Download failed',
+                  });
+                } catch {}
               }
             } else {
               console.log(`⚠️ Resource not accessible: ${absoluteUrl}`);
@@ -194,7 +217,68 @@ test.describe("Site Navigation Test with Steps", () => {
               });
 
               // Check for unique elements on this page
-              await checkPageSpecificElements(page, item.text);
+              const pageDownloadLinks = await checkPageSpecificElements(page, item.text);
+
+              // Process any download links found on this page
+              if (pageDownloadLinks && pageDownloadLinks.length > 0) {
+                for (const downloadLink of pageDownloadLinks) {
+                  console.log(`📥 Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`);
+                  try {
+                    // Get absolute URL for the download
+                    const absoluteDownloadUrl = new URL(downloadLink.href, currentUrl).toString();
+                    // Verify the resource exists
+                    const resourceExists = await verifyResourceExists(absoluteDownloadUrl);
+                    if (resourceExists) {
+                      console.log(`✅ Download resource ${downloadLink.text} exists and is accessible`);
+                      // Try to download the file
+                      const downloadPath = path.join(
+                        config.server.downloadsDir,
+                        path.basename(downloadLink.href),
+                      );
+                      const downloadSuccessful = await downloadFile(
+                        absoluteDownloadUrl,
+                        downloadPath,
+                      );
+                      if (downloadSuccessful) {
+                        console.log(`✅ Successfully downloaded from page: ${downloadPath}`);
+                        // Get file size
+                        const stats = fs.statSync(downloadPath);
+                        console.log(`File size: ${formatFileSize(stats.size)}`);
+                        // Add to navigation paths as a downloadable resource
+                        navigationPaths.push({
+                          from: currentUrl,
+                          to: absoluteDownloadUrl,
+                          label: `${downloadLink.text} (from ${item.text})`,
+                          isDownloadable: true,
+                          fileSize: stats.size,
+                        });
+                      } else {
+                        console.log(`⚠️ Download failed for: ${absoluteDownloadUrl}`);
+                        try {
+                          const downloadPath = path.join(
+                            config.server.downloadsDir,
+                            path.basename(downloadLink.href),
+                          );
+                          const fileSize = fs.existsSync(downloadPath) ? fs.statSync(downloadPath).size : undefined;
+                          skippedDownloads.push({
+                            from: currentUrl,
+                            to: absoluteDownloadUrl,
+                            label: `${downloadLink.text} (from ${item.text})`,
+                            fileSize,
+                            reason: fileSize && fileSize > config.allowedDownloads.maxFileSize ? `File size ${formatFileSize(fileSize)} exceeds max allowed` : 'Download failed',
+                          });
+                        } catch {}
+                      }
+                    } else {
+                      console.log(`⚠️ Download resource not accessible: ${absoluteDownloadUrl}`);
+                    }
+                  } catch (error) {
+                    console.log(
+                      `⚠️ Error handling page download: ${error instanceof Error ? error.message : String(error)}`,
+                    );
+                  }
+                }
+              }
 
               // Return to the main page for the next navigation
               await page.goto(config.server.baseUrl, { timeout: 30000 });
@@ -225,22 +309,34 @@ test.describe("Site Navigation Test with Steps", () => {
       );
 
       console.log(
-        `Total visited: ${navigationPaths.length} (${regularPages.length} pages + ${downloadableResources.length} downloadable resources)`,
+        `Total visited: ${navigationPaths.length} (${regularPages.length} pages + ${downloadableResources.length} downloadable resources)`
       );
 
       // List all navigable pages
       console.log("\n- Regular Pages:");
       regularPages.forEach((path, index) => {
-        console.log(`${index + 1}. ${path.label}: ${path.from} → ${path.to}`);
+        const cleanLabel = path.label.replace(/\s+/g, ' ').trim();
+        console.log(`${index + 1}. ${cleanLabel}: ${path.from} → ${path.to}`);
       });
 
       // List all downloadable resources
       if (downloadableResources.length > 0) {
         console.log("\n- Downloadable Resources:");
         downloadableResources.forEach((path, index) => {
+          const cleanLabel = path.label.replace(/\s+/g, ' ').trim();
           console.log(
-            `${index + 1}. ${path.label}: ${formatFileSize(path.fileSize || 0)}`,
+            `${index + 1}. ${cleanLabel}: ${formatFileSize(path.fileSize || 0)}`
           );
+        });
+      }
+
+      // NEW: List skipped downloads
+      if (skippedDownloads.length > 0) {
+        console.log("\n- Skipped Downloads:");
+        skippedDownloads.forEach((item, index) => {
+          const cleanLabel = item.label.replace(/\s+/g, ' ').trim();
+          const sizeStr = item.fileSize ? formatFileSize(item.fileSize) : 'Unknown size';
+          console.log(`${index + 1}. ${cleanLabel}: ${sizeStr} [SKIPPED: ${item.reason}]`);
         });
       }
 
@@ -481,8 +577,8 @@ async function identifyNavigation(page: Page) {
 }
 
 // ENHANCED: Better page-specific element checking with improved scrolling
-async function checkPageSpecificElements(page: Page, pageName: string) {
-  await test.step(`Check ${pageName} page elements`, async () => {
+async function checkPageSpecificElements(page: Page, pageName: string): Promise<Array<{ text: string; href: string; fullText: string; isDownload: boolean }>> {
+  return await test.step(`Check ${pageName} page elements`, async () => {
     // ENHANCED: Better scrolling for lazy loading (especially for asset pages)
     await page.evaluate(async () => {
       const scrollToBottomEnhanced = async () => {
@@ -582,6 +678,12 @@ async function checkPageSpecificElements(page: Page, pageName: string) {
     if (hasMissingElements.length > 0) {
       console.log(`⚠️ Missing critical elements: ${hasMissingElements.join(', ')}`);
     }
+
+    // **NEW: SCAN FOR DOWNLOAD LINKS ON THIS PAGE**
+    const pageDownloadLinks = await scanPageForDownloads(page, pageName);
+
+    // **NEW: RETURN THE DOWNLOAD LINKS FOUND ON THIS PAGE**
+    return pageDownloadLinks;
   });
 }
 
@@ -1396,7 +1498,6 @@ async function verifyResourceExists(url: string): Promise<boolean> {
         resolve(false);
       });
 
-      req.end();
     } catch (error) {
       console.log(`❌ Resource verification exception for ${url}: ${error}`);
       resolve(false);
@@ -1591,4 +1692,123 @@ function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+// **NEW FUNCTION: Scan current page for download links**
+async function scanPageForDownloads(page: Page, pageName: string) {
+  console.log(`🔍 Scanning "${pageName}" for download links...`);
+  
+  const downloadLinks = await page.evaluate(() => {
+    const downloads: Array<{
+      text: string;
+      href: string;
+      fullText: string;
+      isDownload: boolean;
+    }> = [];
+
+    // Enhanced selectors for download links on the current page
+    const downloadSelectors = [
+      // Direct download links
+      'a[href*=".zip"]',
+      'a[href*=".pdf"]', 
+      'a[href*=".rar"]',
+      'a[href*=".7z"]',
+      
+      // Links with download keywords
+      'a[href*="download"]',
+      'a[href*="assets/"]',
+      'a[href*="media/"]',
+      'a[href*="files/"]',
+      
+      // Press kit specific patterns
+      'a[href*="product.zip"]',
+      'a[href*="stills.zip"]',
+      'a[href*="images.zip"]',
+      'a[href*="campaign.zip"]',
+      'a[href*="press.zip"]',
+      'a[href*="gallery.zip"]',
+      
+      // Text-based detection
+      'a:has-text("download")',
+      'a:has-text("Download")', 
+      'a:has-text("DOWNLOAD")',
+      'a[download]',
+      
+      // Class-based detection
+      '.download',
+      '.download-link',
+      '.download-btn',
+      '.asset-download',
+      
+      // Press kit specific text patterns
+      'a:has-text("stills")',
+      'a:has-text("Stills")',
+      'a:has-text("STILLS")',
+      'a:has-text("high-res")',
+      'a:has-text("High-Res")',
+      'a:has-text("assets")',
+      'a:has-text("Assets")',
+      'a:has-text("ASSETS")'
+    ];
+
+    for (const selector of downloadSelectors) {
+      try {
+        const links = document.querySelectorAll(selector);
+        
+        for (const link of links) {
+          const href = link.getAttribute('href');
+          if (!href || href === '#' || href.startsWith('javascript:') || href.startsWith('mailto:')) {
+            continue;
+          }
+
+          const text = link.textContent?.trim() || '';
+          if (!text) continue;
+
+          // Determine if this is actually a download
+          const isDownload = href.includes('.pdf') || 
+                            href.includes('.zip') || 
+                            href.includes('.rar') ||
+                            href.includes('.7z') ||
+                            href.includes('/assets/') ||
+                            href.includes('/download') ||
+                            href.includes('/media/') ||
+                            href.includes('/files/') ||
+                            href.includes('product.zip') ||
+                            href.includes('stills.zip') ||
+                            href.includes('images.zip') ||
+                            href.includes('campaign.zip') ||
+                            text.toLowerCase().includes('download') ||
+                            text.toLowerCase().includes('stills') ||
+                            text.toLowerCase().includes('high-res') ||
+                            text.toLowerCase().includes('assets') ||
+                            link.hasAttribute('download');
+
+          if (isDownload && !downloads.some(d => d.href === href)) {
+            downloads.push({
+              text,
+              href,
+              fullText: text,
+              isDownload: true
+            });
+          }
+        }
+      } catch (e) {
+        // Skip invalid selectors
+        continue;
+      }
+    }
+
+    return downloads;
+  });
+
+  if (downloadLinks.length > 0) {
+    console.log(`📥 Found ${downloadLinks.length} download links on "${pageName}":`);
+    downloadLinks.forEach((link, idx) => {
+      console.log(`   ${idx + 1}. 📥 ${link.text} (${link.href})`);
+    });
+    return downloadLinks;
+  } else {
+    console.log(`📥 No download links found on "${pageName}"`);
+    return [];
+  }
 }
