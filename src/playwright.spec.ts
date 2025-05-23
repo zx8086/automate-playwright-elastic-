@@ -7,7 +7,6 @@ import * as http from "http";
 import * as https from "https";
 import { config } from "../config";
 
-// Add these interfaces at the top of the file, after the imports
 interface PageLoadOptions {
     timeout?: number;
     imageTimeout?: number;
@@ -89,7 +88,7 @@ test.describe("Site Navigation Test with Steps", () => {
 
     // Log all navigation items
     navigationItems.forEach((item, idx) => {
-      console.log(`${idx + 1}. ${item.text} (${item.href})`);
+      // console.log(`${idx + 1}. ${item.text} (${item.href})`);
     });
 
     // Take screenshot of navigation menu
@@ -582,7 +581,6 @@ async function exportElasticSyntheticsData(
   return syntheticsData;
 }
 
-// Add these interfaces before the generateElasticSyntheticsTest function
 interface PageLoadOptions {
     timeout?: number;
     imageTimeout?: number;
