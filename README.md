@@ -1,5 +1,11 @@
 # Automate Playwright Elastic
 
+[![Powered by Bun](https://img.shields.io/badge/Powered%20by-Bun-000000?style=for-the-badge&logo=bun&logoColor=white)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev)
+[![Elastic](https://img.shields.io/badge/Elastic-005571?style=for-the-badge&logo=elastic&logoColor=white)](https://www.elastic.co)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](zx8086/automate-playwright-elastic-)
+
 A comprehensive Playwright-based automation tool for website navigation analysis, asset discovery, and Elastic Synthetics test generation. This project automatically explores websites, downloads assets, takes screenshots, and generates monitoring tests for continuous website health checks.
 
 ## Features
@@ -230,7 +236,7 @@ journey('Department - Journey Type | site (core) - env', async ({ page }) => {
         throttling: false,
         tags: ['environment', 'department', 'domain', 'service', 'site'],
     });
-    
+
     // Navigation steps...
 });
 ```
@@ -323,7 +329,7 @@ allowedDownloads: {
 
 #### Navigation Not Found
 **Problem**: "No navigation items found"
-**Solution**: 
+**Solution**:
 - Check if the website uses custom navigation selectors
 - Add site-specific selectors to `identifyNavigation` function
 - Verify the website loads correctly
