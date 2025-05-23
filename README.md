@@ -100,25 +100,19 @@ Run the complete website analysis:
 bun run test
 ```
 
-Or using the npm script:
-
-```bash
-bun test
-```
-
 ### Command Line Options
 
 The test can be customized using Playwright's built-in options:
 
 ```bash
 # Run in headless mode
-bun test --headed=false
+bun run test --headed=false
 
 # Run with specific timeout
-bun test --timeout=60000
+bun run test --timeout=60000
 
 # Generate HTML report
-bun test --reporter=html
+bun run test --reporter=html
 ```
 
 ### Environment-Specific Runs
@@ -127,10 +121,10 @@ Set environment variables for different configurations:
 
 ```bash
 # Production environment
-ENVIRONMENT=production BASE_URL=https://prod.example.com bun test
+ENVIRONMENT=production BASE_URL=https://prod.example.com bun run test
 
 # Development environment
-ENVIRONMENT=development BASE_URL=https://dev.example.com bun test
+ENVIRONMENT=development BASE_URL=https://dev.example.com bun run  test
 ```
 
 ## Project Structure
@@ -278,16 +272,16 @@ elastic-synthetics push --url <kibana-url> --id <project-id> synthetics/
 
 ```bash
 # Run all tests
-bun test
+bun run test
 
 # Run with debugging
-DEBUG=pw:api bun test
+DEBUG=pw:api bun run test
 
 # Run specific test file
-bun test src/playwright.spec.ts
+bun run test src/playwright.spec.ts
 
 # Run with custom configuration
-ENVIRONMENT=staging bun test
+ENVIRONMENT=staging bun run test
 ```
 
 ### Configuration Validation
@@ -370,10 +364,10 @@ Enable detailed logging:
 
 ```bash
 # Playwright debug mode
-DEBUG=pw:api bun test
+DEBUG=pw:api bun run test
 
 # Configuration debug
-NODE_ENV=development bun test
+NODE_ENV=development bun run test
 ```
 
 ### Performance Optimization
@@ -382,20 +376,20 @@ For large websites:
 
 ```bash
 # Increase timeout
-TIMEOUT=180000 bun test
+TIMEOUT=180000 bun run test
 
 # Reduce screenshot quality
-SCREENSHOT_MODE=only-on-failure bun test
+SCREENSHOT_MODE=only-on-failure bun run test
 
 # Skip video recording
-VIDEO_MODE=off bun test
+VIDEO_MODE=off bun run test
 ```
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/new-feature`
-3. Make changes and test: `bun test`
+3. Make changes and test: `bun run test`
 4. Commit changes: `git commit -am 'Add new feature'`
 5. Push to branch: `git push origin feature/new-feature`
 6. Submit a pull request
