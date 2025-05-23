@@ -7,11 +7,35 @@ import * as http from "http";
 import * as https from "https";
 import { config } from "../config";
 
+const logMemoryUsage = () => {
+  const memUsage = process.memoryUsage();
+  console.log("Memory Usage:", {
+    rss: `${Math.round(memUsage.rss / 1024 / 1024)} MB`,
+    heapTotal: `${Math.round(memUsage.heapTotal / 1024 / 1024)} MB`,
+    heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)} MB`,
+    external: `${Math.round(memUsage.external / 1024 / 1024)} MB`,
+  });
+};
+
 test.describe("Site Navigation Test with Steps", () => {
   test.setTimeout(180000); // 3 minutes
 
+  test.beforeAll(async () => {
+    // console.log('\nInitial Memory Usage:');
+    // logMemoryUsage();
+  });
+
+  test.afterAll(async () => {
+    // console.log('\nFinal Memory Usage:');
+    // logMemoryUsage();
+  });
+
   test.beforeEach(async ({ page }) => {
-    [config.server.screenshotDir, config.server.downloadsDir, config.server.syntheticsDir].forEach((dir) => {
+    [
+      config.server.screenshotDir,
+      config.server.downloadsDir,
+      config.server.syntheticsDir,
+    ].forEach((dir) => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
@@ -55,7 +79,7 @@ test.describe("Site Navigation Test with Steps", () => {
 
     // Take screenshot of navigation menu
     await page.screenshot({
-      path: path.join(config.server.screenshotDir, "navigation-menu.png")
+      path: path.join(config.server.screenshotDir, "navigation-menu.png"),
     });
 
     // Navigate to each identified item directly (without clicking)
@@ -83,11 +107,11 @@ test.describe("Site Navigation Test with Steps", () => {
               // Try to download the file
               const downloadPath = path.join(
                 config.server.downloadsDir,
-                path.basename(item.href)
+                path.basename(item.href),
               );
               const downloadSuccessful = await downloadFile(
                 absoluteUrl,
-                downloadPath
+                downloadPath,
               );
 
               if (downloadSuccessful) {
@@ -143,14 +167,14 @@ test.describe("Site Navigation Test with Steps", () => {
                 to: currentUrl,
                 label: item.text,
                 isDownloadable: false,
-                elementCounts: elementCounts
+                elementCounts: elementCounts,
               });
 
               // Take screenshot of the page
               await page.screenshot({
                 path: path.join(
                   config.server.screenshotDir,
-                  `${item.text.replace(/\s+/g, "-").toLowerCase()}.png`
+                  `${item.text.replace(/\s+/g, "-").toLowerCase()}.png`,
                 ),
               });
 
@@ -206,7 +230,10 @@ test.describe("Site Navigation Test with Steps", () => {
       }
 
       // Export data for Elastic Synthetics
-      await exportElasticSyntheticsData(navigationPaths, config.server.syntheticsDir);
+      await exportElasticSyntheticsData(
+        navigationPaths,
+        config.server.syntheticsDir,
+      );
 
       // Create a visual sitemap
       await createVisualSitemap(navigationPaths, config.server.screenshotDir);
@@ -228,13 +255,16 @@ async function getElementCounts(page: Page) {
 // Identify navigation items
 async function identifyNavigation(page: Page) {
   console.log("Analyzing navigation structure...");
-  
+
   const navItems = await page.evaluate(() => {
     const cleanText = (html: string | null): string => {
-      if (!html) return '';
-      return html.replace(/<br\s*\/?>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!html) return "";
+      return html
+        .replace(/<br\s*\/?>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
     };
-    
+
     const items: Array<{
       text: string;
       href: string;
@@ -243,65 +273,72 @@ async function identifyNavigation(page: Page) {
 
     // Generic navigation selectors that work for most sites
     const navSelectors = [
-      'nav a',                    // Standard nav links
-      'header a',                 // Header links
-      '.menu a',                  // Menu links
-      '.navbar a',                // Navbar links
-      '.navigation a',            // Navigation links
-      '[role="navigation"] a',    // ARIA navigation
-      '.main-menu a',             // Main menu
-      '.site-nav a',              // Site navigation
-      '.primary-nav a',           // Primary navigation
-      '.secondary-nav a',         // Secondary navigation
-      'footer a'                  // Footer links
+      "nav a", // Standard nav links
+      "header a", // Header links
+      ".menu a", // Menu links
+      ".navbar a", // Navbar links
+      ".navigation a", // Navigation links
+      '[role="navigation"] a', // ARIA navigation
+      ".main-menu a", // Main menu
+      ".site-nav a", // Site navigation
+      ".primary-nav a", // Primary navigation
+      ".secondary-nav a", // Secondary navigation
+      "footer a", // Footer links
     ];
-    
+
     // Try each selector
     for (const selector of navSelectors) {
       const links = document.querySelectorAll(selector);
-      
+
       for (const link of links) {
-        const href = link.getAttribute('href');
-        if (!href || href === '#' || href.startsWith('javascript:') || href.startsWith('mailto:')) {
+        const href = link.getAttribute("href");
+        if (
+          !href ||
+          href === "#" ||
+          href.startsWith("javascript:") ||
+          href.startsWith("mailto:")
+        ) {
           continue;
         }
-        
+
         // Get text content, handling nested elements
-        let text = '';
-        let fullText = '';
-        
+        let text = "";
+        let fullText = "";
+
         if (link.children.length > 0) {
           // Handle nested elements
-          const childTexts = Array.from(link.children).map(child => 
-            cleanText(child.textContent)
-          ).filter(Boolean);
-          
+          const childTexts = Array.from(link.children)
+            .map((child) => cleanText(child.textContent))
+            .filter(Boolean);
+
           text = childTexts[0] || cleanText(link.textContent);
-          fullText = childTexts.join(' ').trim() || text;
+          fullText = childTexts.join(" ").trim() || text;
         } else {
           text = cleanText(link.textContent);
           fullText = text;
         }
-        
+
         if (!text) continue;
-        
+
         // Check if this link is already in our list
-        if (!items.some(item => item.href === href)) {
-          items.push({ 
-            text, 
+        if (!items.some((item) => item.href === href)) {
+          items.push({
+            text,
             href: href as string,
-            fullText
+            fullText,
           });
         }
       }
     }
-    
+
     return items;
   });
-  
+
   if (navItems.length === 0) {
-    console.log("No navigation items found with standard selectors, trying generic approach...");
-    
+    console.log(
+      "No navigation items found with standard selectors, trying generic approach...",
+    );
+
     // Fallback to generic approach
     const genericNavItems = await page.evaluate(() => {
       const items: Array<{
@@ -309,34 +346,36 @@ async function identifyNavigation(page: Page) {
         href: string;
         fullText: string;
       }> = [];
-      
+
       // Get all links that might be navigation
-      const allLinks = document.querySelectorAll('a[href]:not([href^="#"]):not([href^="javascript:"]):not([href^="mailto:"])');
-      
+      const allLinks = document.querySelectorAll(
+        'a[href]:not([href^="#"]):not([href^="javascript:"]):not([href^="mailto:"])',
+      );
+
       for (const link of allLinks) {
-        const href = link.getAttribute('href');
+        const href = link.getAttribute("href");
         if (!href) continue;
-        
-        const text = link.textContent?.trim() || '';
+
+        const text = link.textContent?.trim() || "";
         if (!text) continue;
-        
+
         // Skip if this link is already in our list
-        if (!items.some(item => item.href === href)) {
-          items.push({ 
-            text, 
+        if (!items.some((item) => item.href === href)) {
+          items.push({
+            text,
             href: href as string,
-            fullText: text
+            fullText: text,
           });
         }
       }
-      
+
       return items;
     });
-    
+
     console.log("Generic approach found items:", genericNavItems);
     return genericNavItems;
   }
-  
+
   return navItems;
 }
 
@@ -351,9 +390,11 @@ async function checkPageSpecificElements(page: Page, pageName: string) {
     );
 
     // Look for page-specific elements based on page name
-    if (pageName.toLowerCase().includes("bio") ||
+    if (
+      pageName.toLowerCase().includes("bio") ||
       pageName.toLowerCase().includes("about") ||
-      pageName.toLowerCase().includes("tommy")) {
+      pageName.toLowerCase().includes("tommy")
+    ) {
       const bioSpecificElements = await page
         .locator("article, .bio, .biography")
         .count();
@@ -363,9 +404,11 @@ async function checkPageSpecificElements(page: Page, pageName: string) {
         .locator('form, [type="email"], [type="tel"], address')
         .count();
       console.log(`Found ${contactElements} contact-specific elements`);
-    } else if (pageName.toLowerCase().includes("asset") ||
+    } else if (
+      pageName.toLowerCase().includes("asset") ||
       pageName.toLowerCase().includes("image") ||
-      pageName.toLowerCase().includes("media")) {
+      pageName.toLowerCase().includes("media")
+    ) {
       // Check for asset-specific elements
       const assetElements = await page
         .locator(".gallery, .download, [download]")
@@ -414,8 +457,8 @@ async function createVisualSitemap(
     <h2>Navigation Pages</h2>
     <div id="sitemap">
       ${Array.from(new Set(regularPages.map((p) => p.from)))
-      .map(
-        (url) => `
+        .map(
+          (url) => `
         <div class="node">
           <div>${url}</div>
           ${regularPages
@@ -424,7 +467,7 @@ async function createVisualSitemap(
               (path) => `
             <div class="link">
               → ${path.label} (${path.to})
-              ${path.elementCounts ? `<div class="element-counts">Elements: ${JSON.stringify(path.elementCounts)}</div>` : ''}
+              ${path.elementCounts ? `<div class="element-counts">Elements: ${JSON.stringify(path.elementCounts)}</div>` : ""}
               <img class="screenshot" src="${path.label.replace(/\s+/g, "-").toLowerCase()}.png" onerror="this.style.display='none'" />
             </div>
           `,
@@ -432,28 +475,29 @@ async function createVisualSitemap(
             .join("")}
         </div>
       `,
-      )
-      .join("")}
+        )
+        .join("")}
     </div>
 
-    ${downloadableResources.length > 0
-      ? `
+    ${
+      downloadableResources.length > 0
+        ? `
       <h2>Downloadable Resources</h2>
       <div id="downloads">
         ${downloadableResources
-        .map(
-          (download) => `
+          .map(
+            (download) => `
           <div class="download">
             📄 ${download.label} - ${formatFileSize(download.fileSize || 0)}
             <br>
             <a href="${download.to}" target="_blank">${download.to}</a>
           </div>
         `,
-        )
-        .join("")}
+          )
+          .join("")}
       </div>
     `
-      : ""
+        : ""
     }
   </body>
   </html>
@@ -475,11 +519,11 @@ async function exportElasticSyntheticsData(
     elementCounts?: any;
     fullText?: string;
   }>,
-  outputDir: string
+  outputDir: string,
 ) {
   // Get only regular pages (not downloadable resources)
   const regularPages = navigationPaths.filter((p) => !p.isDownloadable);
-  
+
   // Create structured data for Elastic Synthetics
   const pagesData = regularPages.map((page) => {
     return {
@@ -488,34 +532,38 @@ async function exportElasticSyntheticsData(
       sourceUrl: page.from,
       elementCounts: page.elementCounts || {},
       fullText: page.fullText || page.label,
-      href: page.to.split('/').pop() || ''
+      href: page.to.split("/").pop() || "",
     };
   });
-  
+
   // Export JSON for use with Elastic Synthetics
   const syntheticsData = {
     baseUrl: config.server.baseUrl,
     pages: pagesData,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
-  
+
   // Save as JSON in the synthetics directory
   fs.writeFileSync(
-    path.join(config.server.syntheticsDir, "synthetics-data.json"), 
-    JSON.stringify(syntheticsData, null, 2)
+    path.join(config.server.syntheticsDir, "synthetics-data.json"),
+    JSON.stringify(syntheticsData, null, 2),
   );
-  
+
   // Generate and save Elastic Synthetics test file with correct name
   const testCode = generateElasticSyntheticsTest(syntheticsData);
-  const siteId = new URL(config.server.baseUrl).pathname.split('/').filter(Boolean).pop() || 'site';
+  const siteId =
+    new URL(config.server.baseUrl).pathname.split("/").filter(Boolean).pop() ||
+    "site";
   const fileName = `core.journey.ts`;
   const filePath = path.join(config.server.syntheticsDir, fileName);
-  
+
   fs.writeFileSync(filePath, testCode);
-  
-  console.log(`Exported Elastic Synthetics data to: ${path.join(config.server.syntheticsDir, "synthetics-data.json")}`);
+
+  console.log(
+    `Exported Elastic Synthetics data to: ${path.join(config.server.syntheticsDir, "synthetics-data.json")}`,
+  );
   console.log(`Generated Elastic Synthetics test at: ${filePath}`);
-  
+
   return syntheticsData;
 }
 
@@ -534,23 +582,23 @@ function generateElasticSyntheticsTest(data: {
 }): string {
   // Extract site identifier from the baseUrl
   const urlPath = new URL(data.baseUrl).pathname;
-  const siteId = urlPath.split('/').filter(Boolean).pop() || 'site';
-  
+  const siteId = urlPath.split("/").filter(Boolean).pop() || "site";
+
   // Generate tags array
   const tags = [
     config.server.environment,
     config.server.department,
     config.server.domain,
     config.server.service,
-    siteId 
+    siteId,
   ].filter(Boolean);
-  
+
   // Format monitor name according to convention
   const monitorName = `${config.server.departmentShort} - ${config.server.journeyType} Journey | ${siteId} (core) - prd`;
-  
+
   // Format monitor ID
-  const monitorId = `${config.server.journeyType}_${siteId.replace(/[^a-zA-Z0-9]/g, '_')}`;
-  
+  const monitorId = `${config.server.journeyType}_${siteId.replace(/[^a-zA-Z0-9]/g, "_")}`;
+
   // Start building the test code
   let code = `/* ${config.server.domain}/${config.server.service}/${siteId}/core.journey.ts */
 
@@ -574,11 +622,11 @@ journey('${monitorName}', async ({ page }) => {
             // Wait for DOM to be ready - this is essential
             await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
             console.log('DOM loaded in ' + (Date.now() - startTime) + 'ms');
-            
+
             // Wait for body to be visible - quick check
             await page.waitForSelector('body', { state: 'visible', timeout: 5000 });
             console.log('Body visible in ' + (Date.now() - startTime) + 'ms');
-            
+
             // Check for gallery and asset images - only if they exist
             const hasGalleryImages = await page.locator('.gallery img, .assets img').count() > 0;
             if (hasGalleryImages) {
@@ -617,7 +665,7 @@ journey('${monitorName}', async ({ page }) => {
             await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {
                 console.log('Network still active, continuing...');
             });
-            
+
             console.log('Total page load time: ' + (Date.now() - startTime) + 'ms');
         } catch (e) {
             console.log('Page load timeout after ' + (Date.now() - startTime) + 'ms, continuing...');
@@ -626,16 +674,16 @@ journey('${monitorName}', async ({ page }) => {
 
     step('Go to homepage', async () => {
         try {
-            await page.goto(baseUrl, { 
+            await page.goto(baseUrl, {
                 waitUntil: 'domcontentloaded',
-                timeout: 10000 
+                timeout: 10000
             });
             await waitForFullPageLoad();
         } catch (e) {
             console.log('Initial page load failed, retrying...');
-            await page.goto(baseUrl, { 
+            await page.goto(baseUrl, {
                 waitUntil: 'domcontentloaded',
-                timeout: 10000 
+                timeout: 10000
             });
             await waitForFullPageLoad();
         }
@@ -648,7 +696,7 @@ journey('${monitorName}', async ({ page }) => {
     if (page.url === data.baseUrl && index === 0) {
       return;
     }
-    
+
     code += `
     step('Navigate to "${page.label}"', async () => {
         try {
@@ -658,7 +706,7 @@ journey('${monitorName}', async ({ page }) => {
         } catch (e) {
             try {
                 // Try href-based selector
-                await page.locator('a[href*="${page.href.replace(/^\.\//, '')}"]').click();
+                await page.locator('a[href*="${page.href.replace(/^\.\//, "")}"]').click();
                 await waitForFullPageLoad();
             } catch (e) {
                 try {
@@ -684,15 +732,15 @@ journey('${monitorName}', async ({ page }) => {
             await waitForFullPageLoad();
         } catch (e) {
             // Fallback to direct navigation
-            await page.goto(baseUrl, { 
+            await page.goto(baseUrl, {
                 waitUntil: 'domcontentloaded',
-                timeout: 30000 
+                timeout: 30000
             });
             await waitForFullPageLoad();
         }
     });`;
   });
-  
+
   // Add final navigation
   code += `
     step('Return to homepage', async () => {
@@ -702,9 +750,9 @@ journey('${monitorName}', async ({ page }) => {
             await waitForFullPageLoad();
         } catch (e) {
             // Fallback to direct navigation
-            await page.goto(baseUrl, { 
+            await page.goto(baseUrl, {
                 waitUntil: 'domcontentloaded',
-                timeout: 30000 
+                timeout: 30000
             });
             await waitForFullPageLoad();
         }
@@ -752,13 +800,18 @@ async function downloadFile(
 
     const req = protocol.get(url, (response) => {
       const statusCode = response.statusCode || 0;
-      
+
       // Check if the response is successful
       if (statusCode >= 200 && statusCode < 400) {
         // Check content type
-        const contentType = response.headers['content-type'];
-        if (contentType && !config.allowedDownloads.allowedMimeTypes.includes(contentType)) {
-          console.log(`⚠️ Skipping download: Unsupported content type ${contentType}`);
+        const contentType = response.headers["content-type"];
+        if (
+          contentType &&
+          !config.allowedDownloads.allowedMimeTypes.includes(contentType)
+        ) {
+          console.log(
+            `⚠️ Skipping download: Unsupported content type ${contentType}`,
+          );
           file.close();
           fs.unlinkSync(destination);
           resolve(false);
@@ -766,9 +819,14 @@ async function downloadFile(
         }
 
         // Check content length
-        const contentLength = parseInt(response.headers['content-length'] || '0', 10);
+        const contentLength = parseInt(
+          response.headers["content-length"] || "0",
+          10,
+        );
         if (contentLength > config.allowedDownloads.maxFileSize) {
-          console.log(`⚠️ Skipping download: File size ${formatFileSize(contentLength)} exceeds maximum allowed size ${formatFileSize(config.allowedDownloads.maxFileSize)}`);
+          console.log(
+            `⚠️ Skipping download: File size ${formatFileSize(contentLength)} exceeds maximum allowed size ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
+          );
           file.close();
           fs.unlinkSync(destination);
           resolve(false);
@@ -776,10 +834,12 @@ async function downloadFile(
         }
 
         // Handle download progress
-        response.on('data', (chunk) => {
+        response.on("data", (chunk) => {
           downloadedSize += chunk.length;
           if (downloadedSize > config.allowedDownloads.maxFileSize) {
-            console.log(`⚠️ Download cancelled: File size exceeds maximum allowed size`);
+            console.log(
+              `⚠️ Download cancelled: File size exceeds maximum allowed size`,
+            );
             req.destroy();
             file.close();
             fs.unlinkSync(destination);
@@ -790,7 +850,9 @@ async function downloadFile(
         response.pipe(file);
         file.on("finish", () => {
           file.close();
-          console.log(`✅ Successfully downloaded: ${destination} (${formatFileSize(downloadedSize)})`);
+          console.log(
+            `✅ Successfully downloaded: ${destination} (${formatFileSize(downloadedSize)})`,
+          );
           resolve(true);
         });
       } else {

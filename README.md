@@ -368,7 +368,17 @@ DEBUG=pw:api bun run test
 
 # Configuration debug
 NODE_ENV=development bun run test
+
+# With memory usage monitoring
+# Shows memory usage at start and end of test runs
+bun run test
 ```
+
+The memory usage monitoring will show:
+- **RSS**: Resident Set Size - total memory allocated for the process
+- **Heap Total**: Total size of the allocated heap
+- **Heap Used**: Currently active heap memory
+- **External**: Memory used by C++ objects bound to JavaScript objects
 
 ### Performance Optimization
 
