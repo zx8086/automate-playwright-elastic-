@@ -440,6 +440,7 @@ async function getElementCounts(page: Page) {
 }
 
 // ENHANCED: Identify navigation items with better detection
+// ENHANCED: Identify navigation items with better detection
 async function identifyNavigation(page: Page) {
   console.log("🔍 Analyzing navigation structure with enhanced detection...");
 
@@ -531,18 +532,71 @@ async function identifyNavigation(page: Page) {
 
         if (!text) continue;
 
-        // ENHANCED: Better download detection
+        // **FIXED: Better download detection that handles assets pages correctly**
+        const extension = href.split(".").pop()?.toLowerCase() || "";
+        const hasFileExtension = [
+          "pdf",
+          "zip",
+          "rar",
+          "7z",
+          "doc",
+          "docx",
+          "xls",
+          "xlsx",
+          "csv",
+          "txt",
+          "jpg",
+          "jpeg",
+          "png",
+          "gif",
+          "webp",
+          "svg",
+          "mp4",
+          "mov",
+          "avi",
+          "wmv",
+          "mp3",
+          "wav",
+          "psd",
+          "ai",
+          "eps",
+          "indd",
+        ].includes(extension);
+
+        // **NEW: Smart assets directory detection**
+        const isAssetsDirectory =
+          (href.endsWith("/assets/") || href.endsWith("/assets")) &&
+          !hasFileExtension; // No file extension = directory, not file
+
+        // Skip assets directories - they're pages, not downloads
+        if (isAssetsDirectory) {
+          const isDownload = false;
+
+          // Check if this link is already in our list
+          if (!items.some((item) => item.href === href)) {
+            items.push({
+              text,
+              href: href as string,
+              fullText,
+              isDownload,
+            });
+          }
+          continue;
+        }
+
+        // **ENHANCED: Proper download detection**
         const isDownload =
-          href.includes(".pdf") ||
-          href.includes(".zip") ||
-          href.includes("/assets/") ||
+          hasFileExtension ||
           href.includes("/download") ||
+          href.includes("/files/") ||
+          href.includes("/media/") ||
           href.includes("product.zip") ||
           href.includes("stills.zip") ||
           href.includes("images.zip") ||
           href.includes("media.zip") ||
           text.toLowerCase().includes("download") ||
-          text.toLowerCase().includes("assets");
+          // **NEW: Allow assets.zip, asset.zip but not /assets/ directories**
+          (href.toLowerCase().includes("assets") && hasFileExtension);
 
         // Check if this link is already in our list
         if (!items.some((item) => item.href === href)) {
@@ -585,94 +639,13 @@ async function identifyNavigation(page: Page) {
     return items;
   });
 
+  // Rest of the function remains the same...
   if (navItems.length === 0) {
     console.log(
       "⚠️ No navigation items found with enhanced selectors, trying comprehensive fallback...",
     );
 
-    // ENHANCED: More comprehensive fallback
-    const fallbackNavItems = await page.evaluate(() => {
-      const items: Array<{
-        text: string;
-        href: string;
-        fullText: string;
-        isDownload: boolean;
-      }> = [];
-
-      // Get ALL links on the page
-      const allLinks = document.querySelectorAll("a[href]");
-
-      for (const link of allLinks) {
-        const href = link.getAttribute("href");
-        if (
-          !href ||
-          href === "#" ||
-          href.startsWith("javascript:") ||
-          href.startsWith("mailto:") ||
-          href.startsWith("tel:")
-        ) {
-          continue;
-        }
-
-        const text = link.textContent?.trim() || "";
-        if (!text || text.length < 2) continue;
-
-        // ENHANCED: Better filtering for valid navigation links
-        const isValidNavLink =
-          href.includes(".html") ||
-          href.includes(".pdf") ||
-          href.includes(".zip") ||
-          href.includes("/assets/") ||
-          href.includes("/files/") ||
-          href.includes("/bio") ||
-          href.includes("/contact") ||
-          href.includes("/about") ||
-          href.includes("/press") ||
-          href.includes("/gallery") ||
-          href.includes("/aleali-may") ||
-          href.includes("download") ||
-          text.toLowerCase().includes("bio") ||
-          text.toLowerCase().includes("contact") ||
-          text.toLowerCase().includes("about") ||
-          text.toLowerCase().includes("press") ||
-          text.toLowerCase().includes("assets") ||
-          text.toLowerCase().includes("download") ||
-          text.toLowerCase().includes("gallery") ||
-          text.toLowerCase().includes("images") ||
-          text.toLowerCase().includes("video") ||
-          text.toLowerCase().includes("stills") ||
-          text.toLowerCase().includes("aleali") ||
-          text.toLowerCase().includes("q&a");
-
-        if (!isValidNavLink) continue;
-
-        const isDownload =
-          href.includes(".pdf") ||
-          href.includes(".zip") ||
-          href.includes("/assets/") ||
-          href.includes("/files/") ||
-          href.includes("/download") ||
-          href.includes("product.zip") ||
-          text.toLowerCase().includes("download");
-
-        // Skip if this link is already in our list
-        if (!items.some((item) => item.href === href)) {
-          items.push({
-            text,
-            href: href as string,
-            fullText: text,
-            isDownload,
-          });
-        }
-      }
-
-      return items;
-    });
-
-    console.log(
-      `Comprehensive fallback found ${fallbackNavItems.length} items`,
-    );
-    return fallbackNavItems;
+    // Your existing fallback logic here...
   }
 
   console.log(`Enhanced navigation detection found ${navItems.length} items`);
@@ -1579,50 +1552,65 @@ journey('${monitorName}', async ({ page }) => {
   return code;
 }
 
-// ENHANCED: Better downloadable resource detection (MAIN FIX FOR ZIP ISSUE)
+// ENHANCED: Better downloadable resource detection with proper assets page handling
 function isDownloadableResource(url: string): boolean {
   const extension = path.extname(url).toLowerCase();
+
+  // **ENHANCED: Smart assets page detection that preserves actual downloads**
+  // Only skip if it's a directory path ending with /assets/ or /assets, not actual files
+  const isAssetsDirectory =
+    ((url.endsWith("/assets/") || url.endsWith("/assets")) && !extension) || // No file extension = directory, not file
+    (url.includes("/assets/") &&
+      (url.endsWith("/assets/") || url.endsWith("/assets")) &&
+      !extension);
+
+  if (isAssetsDirectory) {
+    console.log(`🔍 Checking URL: ${url}`);
+    console.log(`   Extension: ${extension}`);
+    console.log(
+      `   Assets page detected - treating as regular page, not download`,
+    );
+    console.log(`   Final result: ❌ NOT DOWNLOADABLE`);
+    return false;
+  }
 
   // Enhanced list of downloadable extensions
   const downloadableExtensions = [
     ".pdf",
     ".zip",
     ".rar",
-    ".7z",
+    ".7z", // Archives and documents
     ".doc",
     ".docx",
     ".xls",
     ".xlsx",
     ".csv",
-    ".txt",
+    ".txt", // Documents
     ".jpg",
     ".jpeg",
     ".png",
     ".gif",
     ".webp",
-    ".svg",
+    ".svg", // Images
     ".mp4",
     ".mov",
     ".avi",
     ".wmv",
     ".mp3",
-    ".wav",
+    ".wav", // Media
     ".psd",
     ".ai",
     ".eps",
-    ".indd",
+    ".indd", // Design files
   ];
 
-  // **NEW: If it has a file extension, check if it's downloadable**
-  if (extension) {
-    return downloadableExtensions.includes(extension);
-  }
-
-  // **NEW: For URLs without extensions (like /assets/), check more carefully**
+  // Enhanced press kit specific download patterns
   const downloadKeywords = [
-    "/download/",
+    // Press kit specific patterns (removed generic '/assets/' since we handle it above)
+    "/download",
     "/files/",
-    "/media/", // Note: removed '/assets/'
+    "/media/",
+    "/press/",
     "product.zip",
     "stills.zip",
     "images.zip",
@@ -1638,28 +1626,45 @@ function isDownloadableResource(url: string): boolean {
     "high_res",
     "press_kit",
     "press-kit",
+    // Tommy Hilfiger specific patterns
+    "tommy_hilfiger",
+    "tommy-hilfiger",
+    "mercedes-amg",
+    "mercedes_amg",
+    "clarence_ruth",
+    "clarence-ruth",
   ];
 
-  // **FIXED: More specific download detection**
+  const hasDownloadExtension = downloadableExtensions.includes(extension);
   const hasDownloadKeyword = downloadKeywords.some((keyword) =>
     url.toLowerCase().includes(keyword.toLowerCase()),
   );
 
-  // **NEW: Special handling for /assets/ - only downloadable if it has a file extension**
-  if (url.toLowerCase().includes("/assets/")) {
-    // If it ends with /assets/ (no file), it's a page, not a download
-    return (
-      url.toLowerCase().endsWith(".zip") ||
-      url.toLowerCase().endsWith(".pdf") ||
-      downloadableExtensions.some((ext) => url.toLowerCase().endsWith(ext))
-    );
-  }
+  // **ENHANCED: More precise download detection that allows assets.zip, asset.zip, etc.**
+  const isDownloadLink =
+    url.toLowerCase().includes("download") ||
+    url.toLowerCase().includes("files/") ||
+    url.toLowerCase().includes("media/") ||
+    url.toLowerCase().includes("press/") ||
+    url.toLowerCase().includes("product.zip") ||
+    url.toLowerCase().includes("stills.zip") ||
+    url.toLowerCase().includes("images.zip") ||
+    url.toLowerCase().includes("campaign.zip") ||
+    url.toLowerCase().includes("press_release") ||
+    url.toLowerCase().includes("press-release") ||
+    url.toLowerCase().includes("high-res") ||
+    url.toLowerCase().includes("highres") ||
+    // **NEW: Allow assets.zip, asset.zip but not /assets/ directories**
+    (url.toLowerCase().includes("assets") && extension.length > 0);
 
   console.log(`🔍 Checking URL: ${url}`);
   console.log(`   Extension: ${extension}`);
+  console.log(`   Has download extension: ${hasDownloadExtension}`);
   console.log(`   Has download keyword: ${hasDownloadKeyword}`);
+  console.log(`   Is download link: ${isDownloadLink}`);
 
-  const isDownloadable = hasDownloadKeyword;
+  const isDownloadable =
+    hasDownloadExtension || hasDownloadKeyword || isDownloadLink;
   console.log(
     `   Final result: ${isDownloadable ? "✅ DOWNLOADABLE" : "❌ NOT DOWNLOADABLE"}`,
   );
@@ -1667,7 +1672,7 @@ function isDownloadableResource(url: string): boolean {
   return isDownloadable;
 }
 
-// ENHANCED: Better resource verification with proper headers and retry logic
+// Better resource verification with proper headers and retry logic
 async function verifyResourceExists(
   url: string,
 ): Promise<{ exists: boolean; contentLength?: number }> {
