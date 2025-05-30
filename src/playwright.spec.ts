@@ -8,17 +8,17 @@ import * as https from "https";
 import { config } from "../config";
 
 interface PageLoadOptions {
-    timeout?: number;
-    imageTimeout?: number;
-    networkIdleTimeout?: number;
+  timeout?: number;
+  imageTimeout?: number;
+  networkIdleTimeout?: number;
 }
 
 interface PerformanceMetrics {
-    navigationTiming: PerformanceNavigationTiming;
-    paintTiming: PerformancePaintTiming[];
-    lcp?: PerformanceEntry;
-    cls?: PerformanceEntry;
-    longTasks?: PerformanceEntry[];
+  navigationTiming: PerformanceNavigationTiming;
+  paintTiming: PerformancePaintTiming[];
+  lcp?: PerformanceEntry;
+  cls?: PerformanceEntry;
+  longTasks?: PerformanceEntry[];
 }
 
 const logMemoryUsage = () => {
@@ -132,12 +132,15 @@ test.describe("Site Navigation Test with Steps", () => {
 
             // Skip if we've already processed this download
             if (processedDownloads.has(absoluteUrl)) {
-              console.log(`⏭️ Skipping already processed download: ${absoluteUrl}`);
+              console.log(
+                `⏭️ Skipping already processed download: ${absoluteUrl}`,
+              );
               return;
             }
 
             // Verify the resource exists and get content length
-            const { exists, contentLength } = await verifyResourceExists(absoluteUrl);
+            const { exists, contentLength } =
+              await verifyResourceExists(absoluteUrl);
 
             if (exists) {
               console.log(`✅ Resource ${item.text} exists and is accessible`);
@@ -148,14 +151,19 @@ test.describe("Site Navigation Test with Steps", () => {
                 path.basename(item.href),
               );
 
-              if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
-                console.log(`⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`);
+              if (
+                contentLength &&
+                contentLength > config.allowedDownloads.maxFileSize
+              ) {
+                console.log(
+                  `⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
+                );
                 skippedDownloads.push({
                   from: startUrl,
                   to: absoluteUrl,
-                  label: item.text.replace(/\s+/g, ' ').trim(),
+                  label: item.text.replace(/\s+/g, " ").trim(),
                   fileSize: contentLength,
-                  reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                  reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
                 });
               } else {
                 const downloadSuccessful = await downloadFile(
@@ -186,9 +194,9 @@ test.describe("Site Navigation Test with Steps", () => {
                   skippedDownloads.push({
                     from: startUrl,
                     to: absoluteUrl,
-                    label: item.text.replace(/\s+/g, ' ').trim(),
+                    label: item.text.replace(/\s+/g, " ").trim(),
                     fileSize: contentLength,
-                    reason: 'Download failed'
+                    reason: "Download failed",
                   });
                 }
               }
@@ -240,25 +248,38 @@ test.describe("Site Navigation Test with Steps", () => {
               });
 
               // Check for unique elements on this page
-              const pageDownloadLinks = await checkPageSpecificElements(page, item.text);
+              const pageDownloadLinks = await checkPageSpecificElements(
+                page,
+                item.text,
+              );
 
               // Process any download links found on this page
               if (pageDownloadLinks && pageDownloadLinks.length > 0) {
                 for (const downloadLink of pageDownloadLinks) {
-                  const downloadUrl = new URL(downloadLink.href, currentUrl).toString();
-                  
+                  const downloadUrl = new URL(
+                    downloadLink.href,
+                    currentUrl,
+                  ).toString();
+
                   // Skip if we've already processed this download
                   if (processedDownloads.has(downloadUrl)) {
-                    console.log(`⏭️ Skipping already processed download: ${downloadUrl}`);
+                    console.log(
+                      `⏭️ Skipping already processed download: ${downloadUrl}`,
+                    );
                     continue;
                   }
 
-                  console.log(`📥 Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`);
+                  console.log(
+                    `📥 Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`,
+                  );
                   try {
                     // Verify the resource exists
-                    const { exists, contentLength } = await verifyResourceExists(downloadUrl);
+                    const { exists, contentLength } =
+                      await verifyResourceExists(downloadUrl);
                     if (exists) {
-                      console.log(`✅ Download resource ${downloadLink.text} exists and is accessible`);
+                      console.log(
+                        `✅ Download resource ${downloadLink.text} exists and is accessible`,
+                      );
                       // Try to download the file
                       const downloadPath = path.join(
                         config.server.downloadsDir,
@@ -269,7 +290,9 @@ test.describe("Site Navigation Test with Steps", () => {
                         downloadPath,
                       );
                       if (downloadSuccessful) {
-                        console.log(`✅ Successfully downloaded from page: ${downloadPath}`);
+                        console.log(
+                          `✅ Successfully downloaded from page: ${downloadPath}`,
+                        );
                         // Get file size
                         const stats = fs.statSync(downloadPath);
                         console.log(`File size: ${formatFileSize(stats.size)}`);
@@ -285,28 +308,40 @@ test.describe("Site Navigation Test with Steps", () => {
                         processedDownloads.add(downloadUrl);
                       } else {
                         console.log(`⚠️ Download failed for: ${downloadUrl}`);
-                        if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
-                          console.log(`⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`);
-                          fs.existsSync(downloadPath) && fs.unlinkSync(downloadPath);
+                        if (
+                          contentLength &&
+                          contentLength > config.allowedDownloads.maxFileSize
+                        ) {
+                          console.log(
+                            `⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
+                          );
+                          fs.existsSync(downloadPath) &&
+                            fs.unlinkSync(downloadPath);
                           skippedDownloads.push({
                             from: startUrl,
                             to: downloadUrl,
-                            label: downloadLink.text.replace(/\s+/g, ' ').trim(),
+                            label: downloadLink.text
+                              .replace(/\s+/g, " ")
+                              .trim(),
                             fileSize: contentLength,
-                            reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                            reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
                           });
                         } else {
                           skippedDownloads.push({
                             from: startUrl,
                             to: downloadUrl,
-                            label: downloadLink.text.replace(/\s+/g, ' ').trim(),
+                            label: downloadLink.text
+                              .replace(/\s+/g, " ")
+                              .trim(),
                             fileSize: contentLength,
-                            reason: 'Download failed'
+                            reason: "Download failed",
                           });
                         }
                       }
                     } else {
-                      console.log(`⚠️ Download resource not accessible: ${downloadUrl}`);
+                      console.log(
+                        `⚠️ Download resource not accessible: ${downloadUrl}`,
+                      );
                     }
                   } catch (error) {
                     console.log(
@@ -345,13 +380,13 @@ test.describe("Site Navigation Test with Steps", () => {
       );
 
       console.log(
-        `Total visited: ${navigationPaths.length} (${regularPages.length} pages + ${downloadableResources.length} downloadable resources)`
+        `Total visited: ${navigationPaths.length} (${regularPages.length} pages + ${downloadableResources.length} downloadable resources)`,
       );
 
       // List all navigable pages
       console.log("\n- Regular Pages:");
       regularPages.forEach((path, index) => {
-        const cleanLabel = path.label.replace(/\s+/g, ' ').trim();
+        const cleanLabel = path.label.replace(/\s+/g, " ").trim();
         console.log(`${index + 1}. ${cleanLabel}: ${path.from} → ${path.to}`);
       });
 
@@ -359,9 +394,9 @@ test.describe("Site Navigation Test with Steps", () => {
       if (downloadableResources.length > 0) {
         console.log("\n- Downloadable Resources:");
         downloadableResources.forEach((path, index) => {
-          const cleanLabel = path.label.replace(/\s+/g, ' ').trim();
+          const cleanLabel = path.label.replace(/\s+/g, " ").trim();
           console.log(
-            `${index + 1}. ${cleanLabel}: ${formatFileSize(path.fileSize || 0)}`
+            `${index + 1}. ${cleanLabel}: ${formatFileSize(path.fileSize || 0)}`,
           );
         });
       }
@@ -370,10 +405,14 @@ test.describe("Site Navigation Test with Steps", () => {
       if (skippedDownloads && skippedDownloads.length > 0) {
         console.log("\n- Skipped Downloads:");
         skippedDownloads.forEach((item, index) => {
-          const cleanLabel = item.label.replace(/\s+/g, ' ').trim();
-          const sizeStr = item.fileSize ? formatFileSize(item.fileSize) : 'Unknown size';
-          const reason = item.reason || 'Download failed';
-          console.log(`${index + 1}. ${cleanLabel}: ${sizeStr} [SKIPPED: ${reason}]`);
+          const cleanLabel = item.label.replace(/\s+/g, " ").trim();
+          const sizeStr = item.fileSize
+            ? formatFileSize(item.fileSize)
+            : "Unknown size";
+          const reason = item.reason || "Download failed";
+          console.log(
+            `${index + 1}. ${cleanLabel}: ${sizeStr} [SKIPPED: ${reason}]`,
+          );
         });
       }
 
@@ -423,28 +462,38 @@ async function identifyNavigation(page: Page) {
     // ENHANCED: More comprehensive selectors for all press kit types
     const navSelectors = [
       // Standard navigation
-      "nav a", "header a", ".menu a", ".navbar a", ".navigation a",
-      '[role="navigation"] a', ".main-menu a", ".site-nav a",
-      
+      "nav a",
+      "header a",
+      ".menu a",
+      ".navbar a",
+      ".navigation a",
+      '[role="navigation"] a',
+      ".main-menu a",
+      ".site-nav a",
+
       // Press kit specific selectors
-      ".press-kit-nav a", ".presskit-nav a", ".pk-nav a",
-      
+      ".press-kit-nav a",
+      ".presskit-nav a",
+      ".pk-nav a",
+
       // Tommy Hilfiger specific patterns
-      'a[href*=".html"]',  // Page links
-      'a[href*=".pdf"]',   // PDF downloads
-      'a[href*=".zip"]',   // ZIP downloads
+      'a[href*=".html"]', // Page links
+      'a[href*=".pdf"]', // PDF downloads
+      'a[href*=".zip"]', // ZIP downloads
       'a[href*="/assets/"]', // Asset downloads
-      'a[href*="/files/"]',  // File downloads
+      'a[href*="/files/"]', // File downloads
       'a[href*="download"]', // Download links
       'a[href*="product.zip"]', // Specific product ZIP
-      'a[href*="stills.zip"]',  // Stills ZIP
-      'a[href*="images.zip"]',  // Images ZIP
-      
+      'a[href*="stills.zip"]', // Stills ZIP
+      'a[href*="images.zip"]', // Images ZIP
+
       // Generic content links
-      "main a", ".content a", ".container a",
-      
+      "main a",
+      ".content a",
+      ".container a",
+
       // Footer links (often contain downloads)
-      "footer a"
+      "footer a",
     ];
 
     // Try each selector
@@ -483,16 +532,17 @@ async function identifyNavigation(page: Page) {
         if (!text) continue;
 
         // ENHANCED: Better download detection
-        const isDownload = href.includes('.pdf') || 
-                          href.includes('.zip') || 
-                          href.includes('/assets/') ||
-                          href.includes('/download') ||
-                          href.includes('product.zip') ||
-                          href.includes('stills.zip') ||
-                          href.includes('images.zip') ||
-                          href.includes('media.zip') ||
-                          text.toLowerCase().includes('download') ||
-                          text.toLowerCase().includes('assets');
+        const isDownload =
+          href.includes(".pdf") ||
+          href.includes(".zip") ||
+          href.includes("/assets/") ||
+          href.includes("/download") ||
+          href.includes("product.zip") ||
+          href.includes("stills.zip") ||
+          href.includes("images.zip") ||
+          href.includes("media.zip") ||
+          text.toLowerCase().includes("download") ||
+          text.toLowerCase().includes("assets");
 
         // Check if this link is already in our list
         if (!items.some((item) => item.href === href)) {
@@ -500,39 +550,46 @@ async function identifyNavigation(page: Page) {
             text,
             href: href as string,
             fullText,
-            isDownload
+            isDownload,
           });
         }
       }
     }
 
     // ENHANCED: Special handling for hidden download links
-    const potentialDownloads = document.querySelectorAll('[data-download], [data-file], .download-link, .download-btn');
+    const potentialDownloads = document.querySelectorAll(
+      "[data-download], [data-file], .download-link, .download-btn",
+    );
     for (const element of potentialDownloads) {
-      const href = element.getAttribute('href') || 
-                   element.getAttribute('data-href') ||
-                   element.getAttribute('data-url');
-      
+      const href =
+        element.getAttribute("href") ||
+        element.getAttribute("data-href") ||
+        element.getAttribute("data-url");
+
       if (href) {
-        const text = element.textContent?.trim() || 'Download';
+        const text = element.textContent?.trim() || "Download";
         if (!items.some((item) => item.href === href)) {
           items.push({
             text,
             href,
             fullText: text,
-            isDownload: true
+            isDownload: true,
           });
         }
       }
     }
 
-    console.log(`Found ${items.length} navigation items with enhanced detection`);
+    console.log(
+      `Found ${items.length} navigation items with enhanced detection`,
+    );
     return items;
   });
 
   if (navItems.length === 0) {
-    console.log("⚠️ No navigation items found with enhanced selectors, trying comprehensive fallback...");
-    
+    console.log(
+      "⚠️ No navigation items found with enhanced selectors, trying comprehensive fallback...",
+    );
+
     // ENHANCED: More comprehensive fallback
     const fallbackNavItems = await page.evaluate(() => {
       const items: Array<{
@@ -543,53 +600,60 @@ async function identifyNavigation(page: Page) {
       }> = [];
 
       // Get ALL links on the page
-      const allLinks = document.querySelectorAll('a[href]');
+      const allLinks = document.querySelectorAll("a[href]");
 
       for (const link of allLinks) {
-        const href = link.getAttribute('href');
-        if (!href || href === '#' || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+        const href = link.getAttribute("href");
+        if (
+          !href ||
+          href === "#" ||
+          href.startsWith("javascript:") ||
+          href.startsWith("mailto:") ||
+          href.startsWith("tel:")
+        ) {
           continue;
         }
 
-        const text = link.textContent?.trim() || '';
+        const text = link.textContent?.trim() || "";
         if (!text || text.length < 2) continue;
 
         // ENHANCED: Better filtering for valid navigation links
-        const isValidNavLink = 
-          href.includes('.html') ||
-          href.includes('.pdf') ||
-          href.includes('.zip') ||
-          href.includes('/assets/') ||
-          href.includes('/files/') ||
-          href.includes('/bio') ||
-          href.includes('/contact') ||
-          href.includes('/about') ||
-          href.includes('/press') ||
-          href.includes('/gallery') ||
-          href.includes('/aleali-may') ||
-          href.includes('download') ||
-          text.toLowerCase().includes('bio') ||
-          text.toLowerCase().includes('contact') ||
-          text.toLowerCase().includes('about') ||
-          text.toLowerCase().includes('press') ||
-          text.toLowerCase().includes('assets') ||
-          text.toLowerCase().includes('download') ||
-          text.toLowerCase().includes('gallery') ||
-          text.toLowerCase().includes('images') ||
-          text.toLowerCase().includes('video') ||
-          text.toLowerCase().includes('stills') ||
-          text.toLowerCase().includes('aleali') ||
-          text.toLowerCase().includes('q&a');
+        const isValidNavLink =
+          href.includes(".html") ||
+          href.includes(".pdf") ||
+          href.includes(".zip") ||
+          href.includes("/assets/") ||
+          href.includes("/files/") ||
+          href.includes("/bio") ||
+          href.includes("/contact") ||
+          href.includes("/about") ||
+          href.includes("/press") ||
+          href.includes("/gallery") ||
+          href.includes("/aleali-may") ||
+          href.includes("download") ||
+          text.toLowerCase().includes("bio") ||
+          text.toLowerCase().includes("contact") ||
+          text.toLowerCase().includes("about") ||
+          text.toLowerCase().includes("press") ||
+          text.toLowerCase().includes("assets") ||
+          text.toLowerCase().includes("download") ||
+          text.toLowerCase().includes("gallery") ||
+          text.toLowerCase().includes("images") ||
+          text.toLowerCase().includes("video") ||
+          text.toLowerCase().includes("stills") ||
+          text.toLowerCase().includes("aleali") ||
+          text.toLowerCase().includes("q&a");
 
         if (!isValidNavLink) continue;
 
-        const isDownload = href.includes('.pdf') || 
-                          href.includes('.zip') || 
-                          href.includes('/assets/') ||
-                          href.includes('/files/') ||
-                          href.includes('/download') ||
-                          href.includes('product.zip') ||
-                          text.toLowerCase().includes('download');
+        const isDownload =
+          href.includes(".pdf") ||
+          href.includes(".zip") ||
+          href.includes("/assets/") ||
+          href.includes("/files/") ||
+          href.includes("/download") ||
+          href.includes("product.zip") ||
+          text.toLowerCase().includes("download");
 
         // Skip if this link is already in our list
         if (!items.some((item) => item.href === href)) {
@@ -597,7 +661,7 @@ async function identifyNavigation(page: Page) {
             text,
             href: href as string,
             fullText: text,
-            isDownload
+            isDownload,
           });
         }
       }
@@ -605,7 +669,9 @@ async function identifyNavigation(page: Page) {
       return items;
     });
 
-    console.log(`Comprehensive fallback found ${fallbackNavItems.length} items`);
+    console.log(
+      `Comprehensive fallback found ${fallbackNavItems.length} items`,
+    );
     return fallbackNavItems;
   }
 
@@ -614,7 +680,12 @@ async function identifyNavigation(page: Page) {
 }
 
 // ENHANCED: Better page-specific element checking with improved scrolling
-async function checkPageSpecificElements(page: Page, pageName: string): Promise<Array<{ text: string; href: string; fullText: string; isDownload: boolean }>> {
+async function checkPageSpecificElements(
+  page: Page,
+  pageName: string,
+): Promise<
+  Array<{ text: string; href: string; fullText: string; isDownload: boolean }>
+> {
   return await test.step(`Check ${pageName} page elements`, async () => {
     // ENHANCED: Better scrolling for lazy loading (especially for asset pages)
     await page.evaluate(async () => {
@@ -622,32 +693,38 @@ async function checkPageSpecificElements(page: Page, pageName: string): Promise<
         const scrollHeight = document.documentElement.scrollHeight;
         const viewportHeight = window.innerHeight;
         const totalSteps = Math.ceil(scrollHeight / viewportHeight);
-        
-        console.log(`📜 Starting enhanced scroll: ${totalSteps} steps for lazy loading`);
-        
+
+        console.log(
+          `📜 Starting enhanced scroll: ${totalSteps} steps for lazy loading`,
+        );
+
         for (let step = 0; step < totalSteps; step++) {
           const scrollTo = step * viewportHeight;
-          window.scrollTo({ top: scrollTo, behavior: 'smooth' });
-          
+          window.scrollTo({ top: scrollTo, behavior: "smooth" });
+
           // Wait longer for lazy loading to trigger
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
           // Check for new images that might have loaded
-          const newImages = document.querySelectorAll('img[loading="lazy"], img[data-src], img[src*="nextImageExportOptimizer"]');
+          const newImages = document.querySelectorAll(
+            'img[loading="lazy"], img[data-src], img[src*="nextImageExportOptimizer"]',
+          );
           if (newImages.length > 0) {
-            console.log(`📸 Found ${newImages.length} lazy images at scroll position ${scrollTo}`);
+            console.log(
+              `📸 Found ${newImages.length} lazy images at scroll position ${scrollTo}`,
+            );
           }
         }
-        
+
         // Final scroll to bottom and hold
-        window.scrollTo({ top: scrollHeight, behavior: 'smooth' });
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
+        window.scrollTo({ top: scrollHeight, behavior: "smooth" });
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
         // Scroll back to top slowly
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       };
-      
+
       await scrollToBottomEnhanced();
     });
 
@@ -656,64 +733,110 @@ async function checkPageSpecificElements(page: Page, pageName: string): Promise<
 
     // Common elements to check
     const elementCounts = await getElementCounts(page);
-    console.log(`📊 Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`);
+    console.log(
+      `📊 Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`,
+    );
 
     // ENHANCED: More comprehensive page-specific checks
     const pageNameLower = pageName.toLowerCase();
-    
-    if (pageNameLower.includes('bio') || pageNameLower.includes('about') || pageNameLower.includes('tommy')) {
-      const bioElements = await page.locator('article, .bio, .biography, .about, .profile').count();
-      const textBlocks = await page.locator('p, .text, .content').count();
-      console.log(`👤 Biography page elements: ${bioElements} bio sections, ${textBlocks} text blocks`);
-      
-    } else if (pageNameLower.includes('contact')) {
-      const contactElements = await page.locator('form, [type="email"], [type="tel"], address, .contact').count();
-      const socialLinks = await page.locator('a[href*="instagram"], a[href*="twitter"], a[href*="facebook"]').count();
-      console.log(`📞 Contact page elements: ${contactElements} contact forms, ${socialLinks} social links`);
-      
-    } else if (pageNameLower.includes('asset') || pageNameLower.includes('image') || pageNameLower.includes('media') || pageNameLower.includes('gallery') || pageNameLower.includes('stills')) {
-      const galleryElements = await page.locator('.gallery, .grid, .assets, .media-grid').count();
-      const downloadLinks = await page.locator('a[href*=".zip"], a[href*="download"], .download').count();
-      const images = await page.locator('img').count();
-      const videos = await page.locator('video, .video').count();
-      
+
+    if (
+      pageNameLower.includes("bio") ||
+      pageNameLower.includes("about") ||
+      pageNameLower.includes("tommy")
+    ) {
+      const bioElements = await page
+        .locator("article, .bio, .biography, .about, .profile")
+        .count();
+      const textBlocks = await page.locator("p, .text, .content").count();
+      console.log(
+        `👤 Biography page elements: ${bioElements} bio sections, ${textBlocks} text blocks`,
+      );
+    } else if (pageNameLower.includes("contact")) {
+      const contactElements = await page
+        .locator('form, [type="email"], [type="tel"], address, .contact')
+        .count();
+      const socialLinks = await page
+        .locator(
+          'a[href*="instagram"], a[href*="twitter"], a[href*="facebook"]',
+        )
+        .count();
+      console.log(
+        `📞 Contact page elements: ${contactElements} contact forms, ${socialLinks} social links`,
+      );
+    } else if (
+      pageNameLower.includes("asset") ||
+      pageNameLower.includes("image") ||
+      pageNameLower.includes("media") ||
+      pageNameLower.includes("gallery") ||
+      pageNameLower.includes("stills")
+    ) {
+      const galleryElements = await page
+        .locator(".gallery, .grid, .assets, .media-grid")
+        .count();
+      const downloadLinks = await page
+        .locator('a[href*=".zip"], a[href*="download"], .download')
+        .count();
+      const images = await page.locator("img").count();
+      const videos = await page.locator("video, .video").count();
+
       console.log(`🖼️  Asset page elements:`);
       console.log(`   - Gallery containers: ${galleryElements}`);
       console.log(`   - Download links: ${downloadLinks}`);
       console.log(`   - Images: ${images}`);
       console.log(`   - Videos: ${videos}`);
-      
+
       // Check for high-resolution image links
-      const hiResImages = await page.locator('img[src*="7016w"], img[src*="3360w"], img[src*="_high"], img[src*="_large"], img[src*="nextImageExportOptimizer"]').count();
+      const hiResImages = await page
+        .locator(
+          'img[src*="7016w"], img[src*="3360w"], img[src*="_high"], img[src*="_large"], img[src*="nextImageExportOptimizer"]',
+        )
+        .count();
       console.log(`   - High-res/optimized images: ${hiResImages}`);
-      
-    } else if (pageNameLower.includes('press') || pageNameLower.includes('release')) {
-      const pressElements = await page.locator('.press, .release, .news, article').count();
+    } else if (
+      pageNameLower.includes("press") ||
+      pageNameLower.includes("release")
+    ) {
+      const pressElements = await page
+        .locator(".press, .release, .news, article")
+        .count();
       const pdfLinks = await page.locator('a[href*=".pdf"]').count();
-      console.log(`📰 Press page elements: ${pressElements} press sections, ${pdfLinks} PDF downloads`);
-      
-    } else if (pageNameLower.includes('video')) {
-      const videoElements = await page.locator('video, iframe[src*="youtube"], iframe[src*="vimeo"], .video').count();
-      const videoDownloads = await page.locator('a[href*=".mp4"], a[href*=".mov"]').count();
-      console.log(`🎥 Video page elements: ${videoElements} video players, ${videoDownloads} video downloads`);
-      
-    } else if (pageNameLower.includes('aleali')) {
-      const profileElements = await page.locator('.profile, .bio, .about, article').count();
-      const imageElements = await page.locator('img').count();
-      console.log(`👩 Aleali May page elements: ${profileElements} profile sections, ${imageElements} images`);
+      console.log(
+        `📰 Press page elements: ${pressElements} press sections, ${pdfLinks} PDF downloads`,
+      );
+    } else if (pageNameLower.includes("video")) {
+      const videoElements = await page
+        .locator('video, iframe[src*="youtube"], iframe[src*="vimeo"], .video')
+        .count();
+      const videoDownloads = await page
+        .locator('a[href*=".mp4"], a[href*=".mov"]')
+        .count();
+      console.log(
+        `🎥 Video page elements: ${videoElements} video players, ${videoDownloads} video downloads`,
+      );
+    } else if (pageNameLower.includes("aleali")) {
+      const profileElements = await page
+        .locator(".profile, .bio, .about, article")
+        .count();
+      const imageElements = await page.locator("img").count();
+      console.log(
+        `👩 Aleali May page elements: ${profileElements} profile sections, ${imageElements} images`,
+      );
     }
 
     // Check for missing critical elements
     const hasMissingElements = await page.evaluate(() => {
-      const criticalSelectors = ['h1', 'main', '.content', '.container'];
-      const missingElements = criticalSelectors.filter(selector => 
-        document.querySelectorAll(selector).length === 0
+      const criticalSelectors = ["h1", "main", ".content", ".container"];
+      const missingElements = criticalSelectors.filter(
+        (selector) => document.querySelectorAll(selector).length === 0,
       );
       return missingElements;
     });
 
     if (hasMissingElements.length > 0) {
-      console.log(`⚠️ Missing critical elements: ${hasMissingElements.join(', ')}`);
+      console.log(
+        `⚠️ Missing critical elements: ${hasMissingElements.join(", ")}`,
+      );
     }
 
     // **NEW: SCAN FOR DOWNLOAD LINKS ON THIS PAGE**
@@ -874,17 +997,17 @@ async function exportElasticSyntheticsData(
 }
 
 interface PageLoadOptions {
-    timeout?: number;
-    imageTimeout?: number;
-    networkIdleTimeout?: number;
+  timeout?: number;
+  imageTimeout?: number;
+  networkIdleTimeout?: number;
 }
 
 interface PerformanceMetrics {
-    navigationTiming: PerformanceNavigationTiming;
-    paintTiming: PerformancePaintTiming[];
-    lcp?: PerformanceEntry;
-    cls?: PerformanceEntry;
-    longTasks?: PerformanceEntry[];
+  navigationTiming: PerformanceNavigationTiming;
+  paintTiming: PerformancePaintTiming[];
+  lcp?: PerformanceEntry;
+  cls?: PerformanceEntry;
+  longTasks?: PerformanceEntry[];
 }
 
 function generateElasticSyntheticsTest(data: {
@@ -901,23 +1024,23 @@ function generateElasticSyntheticsTest(data: {
 }): string {
   // Extract site identifier from the baseUrl
   const urlPath = new URL(data.baseUrl).pathname;
-  const siteId = urlPath.split('/').filter(Boolean).pop() || 'site';
-  
+  const siteId = urlPath.split("/").filter(Boolean).pop() || "site";
+
   // Generate tags array
   const tags = [
     config.server.environment,
     config.server.department,
     config.server.domain,
     config.server.service,
-    siteId 
+    siteId,
   ].filter(Boolean);
-  
+
   // Format monitor name according to convention
   const monitorName = `${config.server.departmentShort} - ${config.server.journeyType} Journey | ${siteId} (core) - prd`;
-  
+
   // Format monitor ID
-  const monitorId = `${config.server.journeyType}_${siteId.replace(/[^a-zA-Z0-9]/g, '_')}`;
-  
+  const monitorId = `${config.server.journeyType}_${siteId.replace(/[^a-zA-Z0-9]/g, "_")}`;
+
   // Start building the enhanced test code
   let code = `/* ${config.server.domain}/${config.server.service}/${siteId}/core.journey.ts */
 
@@ -941,10 +1064,10 @@ journey('${monitorName}', async ({ page }) => {
             imageTimeout = 3000,
             networkIdleTimeout = 1000
         } = options;
-        
+
         const startTime = Date.now();
         console.log(\`🔄 Enhanced page load starting for \${pageType}...\`);
-        
+
         try {
             // STEP 1: Essential DOM loading (CRITICAL)
             await Promise.race([
@@ -952,29 +1075,29 @@ journey('${monitorName}', async ({ page }) => {
                 page.waitForTimeout(5000)
             ]);
             console.log(\`✅ DOM ready: \${Date.now() - startTime}ms\`);
-            
+
             // STEP 2: Wait for body visibility and content (PREVENTS BLANK SCREENSHOTS)
             await Promise.race([
                 page.waitForSelector('body', { state: 'visible', timeout: 3000 }),
                 page.waitForTimeout(3000)
             ]);
-            
+
             // Enhanced content verification with retry logic
             let hasContent = false;
             let retryCount = 0;
             const maxRetries = 3;
-            
+
             while (!hasContent && retryCount < maxRetries) {
                 hasContent = await page.evaluate(() => {
                     const body = document.body;
                     // More lenient content check
                     return body && (
-                        body.textContent?.trim().length > 0 || 
+                        body.textContent?.trim().length > 0 ||
                         body.children.length > 0 ||
                         body.innerHTML.length > 0
                     );
                 });
-                
+
                 if (!hasContent) {
                     retryCount++;
                     if (retryCount < maxRetries) {
@@ -983,14 +1106,14 @@ journey('${monitorName}', async ({ page }) => {
                     }
                 }
             }
-            
+
             if (!hasContent) {
                 // Check if we're in a back navigation state
                 const isBackNavigation = await page.evaluate(() => {
                     return window.performance.navigation.type === 2 || // Back/Forward navigation
                            window.performance.getEntriesByType('navigation')[0]?.type === 'back_forward';
                 });
-                
+
                 if (isBackNavigation) {
                     console.log('⚠️ Back navigation detected, proceeding with reduced content check');
                     // For back navigation, we'll proceed even with minimal content
@@ -999,21 +1122,21 @@ journey('${monitorName}', async ({ page }) => {
                     throw new Error('Page appears to be empty after multiple retries');
                 }
             }
-            
+
             console.log(\`✅ Body visible with content: \${Date.now() - startTime}ms\`);
-            
+
             // STEP 3: CRITICAL IMAGE LOADING (OPTIMIZED)
             const imagesLoaded = await waitForCriticalImages(imageTimeout);
             if (!imagesLoaded) {
                 console.log('⚠️ Some images may not be fully loaded');
             }
-            
+
             // STEP 4: Navigation elements (OPTIMIZED)
             const navigationLoaded = await waitForNavigation();
             if (!navigationLoaded) {
                 console.log('⚠️ Navigation elements may not be fully loaded');
             }
-            
+
             // STEP 5: Network stability check (OPTIMIZED)
             try {
                 await Promise.race([
@@ -1024,17 +1147,17 @@ journey('${monitorName}', async ({ page }) => {
             } catch (e) {
                 console.log('⚠️ Network still active, continuing...');
             }
-            
+
             // STEP 6: Final page load verification
             const pageLoadStatus = await page.evaluate(() => {
                 // Check if page is interactive
-                const isInteractive = document.readyState === 'complete' || 
+                const isInteractive = document.readyState === 'complete' ||
                                     document.readyState === 'interactive';
-                
+
                 // Check for any loading indicators
                 const loadingIndicators = document.querySelectorAll('.loading, .spinner, [aria-busy="true"]');
                 const isLoading = loadingIndicators.length > 0;
-                
+
                 // More specific error message detection
                 const errorMessages = document.querySelectorAll([
                     // Only actual error messages
@@ -1053,40 +1176,40 @@ journey('${monitorName}', async ({ page }) => {
                     '.notification.error:not([role="heading"])',
                     '.toast.error:not([role="heading"])'
                 ].join(','));
-                
+
                 // Filter out hidden error messages and non-error elements
                 const visibleErrors = Array.from(errorMessages).filter(el => {
                     const style = window.getComputedStyle(el);
-                    const isVisible = style.display !== 'none' && 
-                                     style.visibility !== 'hidden' && 
+                    const isVisible = style.display !== 'none' &&
+                                     style.visibility !== 'hidden' &&
                                      style.opacity !== '0';
-                    
+
                     // Ignore elements that are likely not errors
-                    const isNotError = el.tagName.toLowerCase().startsWith('h') || 
+                    const isNotError = el.tagName.toLowerCase().startsWith('h') ||
                                      el.getAttribute('role') === 'heading' ||
                                      el.textContent?.includes('|') ||
                                      el.textContent?.includes('Collection') ||
                                      el.textContent?.includes('Tommy') ||
                                      el.textContent?.includes('Hilfiger');
-                    
+
                     // Only include elements that look like actual errors
                     const looksLikeError = el.textContent?.toLowerCase().includes('error') ||
                                          el.textContent?.toLowerCase().includes('failed') ||
                                          el.textContent?.toLowerCase().includes('invalid') ||
                                          el.textContent?.toLowerCase().includes('not found');
-                    
+
                     return isVisible && !isNotError && looksLikeError;
                 });
-                
+
                 const hasErrors = visibleErrors.length > 0;
-                
+
                 // Get error details for logging
                 const errorDetails = visibleErrors.map(el => ({
                     text: el.textContent?.trim(),
                     type: el.getAttribute('role') || el.className,
                     visible: true
                 }));
-                
+
                 return {
                     isInteractive,
                     isLoading,
@@ -1095,28 +1218,28 @@ journey('${monitorName}', async ({ page }) => {
                     readyState: document.readyState
                 };
             });
-            
+
             if (!pageLoadStatus.isInteractive) {
                 throw new Error(\`Page not interactive, readyState: \${pageLoadStatus.readyState}\`);
             }
-            
+
             if (pageLoadStatus.isLoading) {
                 console.log('⚠️ Page still shows loading indicators');
             }
-            
+
             if (pageLoadStatus.hasErrors) {
                 console.log('⚠️ Page contains error messages:');
                 pageLoadStatus.errorDetails.forEach(error => {
                     console.log(\`   - \${error.text} (\${error.type})\`);
                 });
             }
-            
+
             // STEP 7: Final render wait (REDUCED)
             await page.waitForTimeout(500);
-            
+
             console.log(\`🎉 Total load time: \${Date.now() - startTime}ms\`);
             return true;
-            
+
         } catch (error) {
             console.log(\`❌ Page load error: \${error.message}\`);
             return false;
@@ -1126,49 +1249,49 @@ journey('${monitorName}', async ({ page }) => {
     // CRITICAL IMAGE LOADING FIX (OPTIMIZED)
     const waitForCriticalImages = async (timeout = 3000) => {
         const startTime = Date.now();
-        
+
         try {
             // Wait for images to appear in DOM
             const imageCount = await page.locator('img').count();
             console.log(\`📸 Found \${imageCount} images\`);
-            
+
             if (imageCount === 0) {
                 console.log('📸 No images to load');
                 return true;
             }
-            
+
             // Wait for at least one image to be visible
             await Promise.race([
                 page.waitForSelector('img', { state: 'visible', timeout: 2000 }),
                 page.waitForTimeout(2000)
             ]);
-            
+
             // Improved scrolling implementation
             await page.evaluate(async () => {
                 const scrollToBottom = async () => {
                     const scrollHeight = document.documentElement.scrollHeight;
                     const viewportHeight = window.innerHeight;
                     const totalSteps = Math.ceil(scrollHeight / viewportHeight);
-                    
+
                     for (let step = 0; step < totalSteps; step++) {
                         const scrollTo = step * viewportHeight;
                         window.scrollTo(0, scrollTo);
                         // Wait for any lazy loading to trigger
                         await new Promise(resolve => setTimeout(resolve, 500));
                     }
-                    
+
                     // Final scroll to bottom
                     window.scrollTo(0, scrollHeight);
                     await new Promise(resolve => setTimeout(resolve, 500));
-                    
+
                     // Scroll back to top
                     window.scrollTo(0, 0);
                     await new Promise(resolve => setTimeout(resolve, 500));
                 };
-                
+
                 await scrollToBottom();
             });
-            
+
             // Optimized image loading detection
             const imageLoadResult = await Promise.race([
                 // Strategy 1: Wait for all images to load
@@ -1176,27 +1299,27 @@ journey('${monitorName}', async ({ page }) => {
                     () => {
                         const images = Array.from(document.querySelectorAll('img'));
                         if (images.length === 0) return true;
-                        
+
                         // Check all images, not just visible ones
                         const loadedImages = images.filter(img => {
                             return img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
                         });
-                        
+
                         const loadRatio = loadedImages.length / images.length;
-                        
+
                         // Require 80% of all images to be loaded
                         return loadRatio >= 0.8;
                     },
                     { timeout: timeout }
                 ),
-                
+
                 // Strategy 2: Timeout fallback
                 page.waitForTimeout(timeout).then(() => {
                     console.log('📸 Image loading timeout reached');
                     return true;
                 })
             ]);
-            
+
             // Verify image dimensions and log loading status
             const imageStatus = await page.evaluate(() => {
                 const images = Array.from(document.querySelectorAll('img'));
@@ -1205,7 +1328,7 @@ journey('${monitorName}', async ({ page }) => {
                     height: img.naturalHeight,
                     complete: img.complete,
                     src: img.src,
-                    visible: img.getBoundingClientRect().width > 0 && 
+                    visible: img.getBoundingClientRect().width > 0 &&
                             img.getBoundingClientRect().height > 0,
                     position: {
                         top: img.getBoundingClientRect().top,
@@ -1215,17 +1338,17 @@ journey('${monitorName}', async ({ page }) => {
                     }
                 }));
             });
-            
+
             const validImages = imageStatus.filter(img => img.width > 0 && img.height > 0);
             const visibleImages = imageStatus.filter(img => img.visible);
             const loadedVisibleImages = visibleImages.filter(img => img.complete);
-            
+
             console.log(\`📸 Image loading status:\`);
             console.log(\`   - Total images: \${imageCount}\`);
             console.log(\`   - Valid images: \${validImages.length}/\${imageCount}\`);
             console.log(\`   - Visible images: \${visibleImages.length}/\${imageCount}\`);
             console.log(\`   - Loaded visible images: \${loadedVisibleImages.length}/\${visibleImages.length}\`);
-            
+
             if (loadedVisibleImages.length < visibleImages.length) {
                 console.log('📸 Some visible images failed to load:');
                 visibleImages
@@ -1235,10 +1358,10 @@ journey('${monitorName}', async ({ page }) => {
                         console.log(\`     Position: top=\${img.position.top}, bottom=\${img.position.bottom}\`);
                     });
             }
-            
+
             console.log(\`📸 Images processed in \${Date.now() - startTime}ms\`);
             return validImages.length > 0;
-            
+
         } catch (error) {
             console.log(\`📸 Image loading error: \${error.message}\`);
             return false;
@@ -1256,7 +1379,7 @@ journey('${monitorName}', async ({ page }) => {
                 '[role="navigation"]',
                 'a[href]:not([href="#"])'
             ];
-            
+
             for (const selector of navSelectors) {
                 const count = await page.locator(selector).count();
                 if (count > 0) {
@@ -1268,10 +1391,10 @@ journey('${monitorName}', async ({ page }) => {
                     return true;
                 }
             }
-            
+
             console.log('🔗 No navigation elements found');
             return false;
-            
+
         } catch (e) {
             console.log('🔗 Navigation loading timeout');
             return false;
@@ -1302,7 +1425,7 @@ journey('${monitorName}', async ({ page }) => {
                 networkIdleTimeout: 1000
             }
         };
-        
+
         return configs[pageType] || configs.default;
     };
 
@@ -1310,24 +1433,24 @@ journey('${monitorName}', async ({ page }) => {
     const enhancedStep = async (stepName: string, pageType: string, action: () => Promise<void>) => {
         const startTime = Date.now();
         console.log(\`🚀 Starting: \${stepName}\`);
-        
+
         try {
             // Execute the action
             await action();
-            
+
             // Apply appropriate waiting strategy based on page type
             const config = getPageConfig(pageType);
             const success = await waitForFullPageLoad(pageType, config);
-            
+
             if (success) {
                 console.log(\`✅ \${stepName} completed in \${Date.now() - startTime}ms\`);
             } else {
                 console.log(\`⚠️ \${stepName} completed with warnings in \${Date.now() - startTime}ms\`);
             }
-            
+
         } catch (error) {
             console.log(\`❌ \${stepName} failed: \${error.message}\`);
-            
+
             // Don't fail the entire journey for navigation issues
             if (error.message.includes('timeout') || error.message.includes('navigation')) {
                 console.log(\`⚠️ Continuing journey despite \${stepName} failure\`);
@@ -1340,9 +1463,9 @@ journey('${monitorName}', async ({ page }) => {
     // HOMEPAGE STEP
     step('Go to homepage', async () => {
         await enhancedStep('Go to homepage', 'homepage', async () => {
-            await page.goto(baseUrl, { 
+            await page.goto(baseUrl, {
                 waitUntil: 'domcontentloaded',
-                timeout: 15000 
+                timeout: 15000
             });
         });
     });
@@ -1354,34 +1477,38 @@ journey('${monitorName}', async ({ page }) => {
     if (page.url === data.baseUrl && index === 0) {
       return;
     }
-    
+
     // Determine page type based on URL/label for appropriate timeouts
-    let pageType = 'default';
+    let pageType = "default";
     const label = page.label.toLowerCase();
-    if (label.includes('bio') || label.includes('about')) {
-      pageType = 'bio';
-    } else if (label.includes('asset') || label.includes('media') || label.includes('gallery')) {
-      pageType = 'assets';
-    } else if (label.includes('press') || label.includes('release')) {
-      pageType = 'default';
+    if (label.includes("bio") || label.includes("about")) {
+      pageType = "bio";
+    } else if (
+      label.includes("asset") ||
+      label.includes("media") ||
+      label.includes("gallery")
+    ) {
+      pageType = "assets";
+    } else if (label.includes("press") || label.includes("release")) {
+      pageType = "default";
     }
-    
+
     // Escape special characters in the page label and href
     const escapedLabel = page.label.replace(/"/g, '\\"');
     const escapedHref = page.href.replace(/"/g, '\\"');
-    
+
     code += `
     step('Navigate to "${escapedLabel}"', async () => {
         await enhancedStep('Navigate to "${escapedLabel}"', '${pageType}', async () => {
             try {
                 // Multiple selection strategies for robust navigation
                 const selectors = [
-                    'a[href*="' + '${escapedHref.replace(/^\.\//, '')}' + '"]',
+                    'a[href*="' + '${escapedHref.replace(/^\.\//, "")}' + '"]',
                     'nav a:has-text("${escapedLabel}")',
                     'a:has-text("${escapedLabel}")',
                     'a[href="' + '${escapedHref}' + '"]'
                 ];
-                
+
                 let clicked = false;
                 for (const selector of selectors) {
                     try {
@@ -1398,11 +1525,11 @@ journey('${monitorName}', async ({ page }) => {
                         continue;
                     }
                 }
-                
+
                 if (!clicked) {
                     throw new Error('Could not find clickable element for ${escapedLabel}');
                 }
-                
+
             } catch (e) {
                 console.log('🔄 Falling back to direct navigation for ${escapedLabel}');
                 await page.goto('${page.url}', {
@@ -1420,15 +1547,15 @@ journey('${monitorName}', async ({ page }) => {
                 console.log('✅ Browser back navigation successful');
             } catch (e) {
                 console.log('🔄 Back navigation failed, using direct navigation');
-                await page.goto(baseUrl, { 
+                await page.goto(baseUrl, {
                     waitUntil: 'domcontentloaded',
-                    timeout: 15000 
+                    timeout: 15000
                 });
             }
         });
     });`;
   });
-  
+
   // Add final step
   code += `
     step('Final homepage verification', async () => {
@@ -1437,9 +1564,9 @@ journey('${monitorName}', async ({ page }) => {
             const currentUrl = page.url();
             if (!currentUrl.includes(baseUrl)) {
                 console.log('🔄 Navigating back to homepage for final verification');
-                await page.goto(baseUrl, { 
+                await page.goto(baseUrl, {
                     waitUntil: 'domcontentloaded',
-                    timeout: 15000 
+                    timeout: 15000
                 });
             } else {
                 console.log('✅ Already on homepage');
@@ -1455,108 +1582,148 @@ journey('${monitorName}', async ({ page }) => {
 // ENHANCED: Better downloadable resource detection (MAIN FIX FOR ZIP ISSUE)
 function isDownloadableResource(url: string): boolean {
   const extension = path.extname(url).toLowerCase();
-  
+
   // Enhanced list of downloadable extensions
   const downloadableExtensions = [
-    '.pdf', '.zip', '.rar', '.7z',  // Archives and documents
-    '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt', // Documents  
-    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', // Images
-    '.mp4', '.mov', '.avi', '.wmv', '.mp3', '.wav', // Media
-    '.psd', '.ai', '.eps', '.indd' // Design files
+    ".pdf",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".csv",
+    ".txt",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".wmv",
+    ".mp3",
+    ".wav",
+    ".psd",
+    ".ai",
+    ".eps",
+    ".indd",
   ];
-  
-  // Enhanced press kit specific download patterns
+
+  // **NEW: If it has a file extension, check if it's downloadable**
+  if (extension) {
+    return downloadableExtensions.includes(extension);
+  }
+
+  // **NEW: For URLs without extensions (like /assets/), check more carefully**
   const downloadKeywords = [
-    // Press kit specific patterns
-    '/download', '/assets/', '/files/', '/media/', '/press/',
-    'product.zip', 'stills.zip', 'images.zip', 'media.zip',
-    'gallery.zip', 'press.zip', 'campaign.zip',
-    'press_release', 'press-release', 'presskit',
-    'high-res', 'highres', 'high_res',
-    'press_kit', 'press-kit',
-    // Tommy Hilfiger specific patterns
-    'tommy_hilfiger', 'tommy-hilfiger',
-    'mercedes-amg', 'mercedes_amg',
-    'clarence_ruth', 'clarence-ruth'
+    "/download/",
+    "/files/",
+    "/media/", // Note: removed '/assets/'
+    "product.zip",
+    "stills.zip",
+    "images.zip",
+    "media.zip",
+    "gallery.zip",
+    "press.zip",
+    "campaign.zip",
+    "press_release",
+    "press-release",
+    "presskit",
+    "high-res",
+    "highres",
+    "high_res",
+    "press_kit",
+    "press-kit",
   ];
-  
-  const hasDownloadExtension = downloadableExtensions.includes(extension);
-  const hasDownloadKeyword = downloadKeywords.some(keyword => 
-    url.toLowerCase().includes(keyword.toLowerCase())
+
+  // **FIXED: More specific download detection**
+  const hasDownloadKeyword = downloadKeywords.some((keyword) =>
+    url.toLowerCase().includes(keyword.toLowerCase()),
   );
-  
-  // Enhanced press kit specific download patterns
-  const isDownloadLink = url.toLowerCase().includes('download') || 
-                        url.toLowerCase().includes('assets/') ||
-                        url.toLowerCase().includes('media/') ||
-                        url.toLowerCase().includes('press/') ||
-                        url.toLowerCase().includes('files/') ||
-                        url.toLowerCase().includes('product.zip') ||
-                        url.toLowerCase().includes('stills.zip') ||
-                        url.toLowerCase().includes('images.zip') ||
-                        url.toLowerCase().includes('campaign.zip') ||
-                        url.toLowerCase().includes('press_release') ||
-                        url.toLowerCase().includes('press-release') ||
-                        url.toLowerCase().includes('high-res') ||
-                        url.toLowerCase().includes('highres');
-  
+
+  // **NEW: Special handling for /assets/ - only downloadable if it has a file extension**
+  if (url.toLowerCase().includes("/assets/")) {
+    // If it ends with /assets/ (no file), it's a page, not a download
+    return (
+      url.toLowerCase().endsWith(".zip") ||
+      url.toLowerCase().endsWith(".pdf") ||
+      downloadableExtensions.some((ext) => url.toLowerCase().endsWith(ext))
+    );
+  }
+
   console.log(`🔍 Checking URL: ${url}`);
   console.log(`   Extension: ${extension}`);
-  console.log(`   Has download extension: ${hasDownloadExtension}`);
   console.log(`   Has download keyword: ${hasDownloadKeyword}`);
-  console.log(`   Is download link: ${isDownloadLink}`);
-  
-  const isDownloadable = hasDownloadExtension || hasDownloadKeyword || isDownloadLink;
-  console.log(`   Final result: ${isDownloadable ? '✅ DOWNLOADABLE' : '❌ NOT DOWNLOADABLE'}`);
-  
+
+  const isDownloadable = hasDownloadKeyword;
+  console.log(
+    `   Final result: ${isDownloadable ? "✅ DOWNLOADABLE" : "❌ NOT DOWNLOADABLE"}`,
+  );
+
   return isDownloadable;
 }
 
 // ENHANCED: Better resource verification with proper headers and retry logic
-async function verifyResourceExists(url: string): Promise<{ exists: boolean; contentLength?: number }> {
+async function verifyResourceExists(
+  url: string,
+): Promise<{ exists: boolean; contentLength?: number }> {
   const maxRetries = 3;
   let currentRetry = 0;
 
   while (currentRetry < maxRetries) {
     try {
-      console.log(`📥 Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
-      
-      const result = await new Promise<{ exists: boolean; contentLength?: number }>((resolve) => {
+      console.log(
+        `📥 Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`,
+      );
+
+      const result = await new Promise<{
+        exists: boolean;
+        contentLength?: number;
+      }>((resolve) => {
         const protocol = url.startsWith("https") ? https : http;
-        
+
         const options = {
           method: "GET",
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Referer': new URL(url).origin,
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            Accept: "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            Connection: "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            Referer: new URL(url).origin,
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
           },
-          timeout: 30000
+          timeout: 30000,
         };
 
         const req = protocol.request(url, options, (res) => {
           const statusCode = res.statusCode || 0;
-          const contentType = res.headers['content-type'] || '';
-          const contentLength = parseInt(res.headers['content-length'] || '0', 10);
-          
+          const contentType = res.headers["content-type"] || "";
+          const contentLength = parseInt(
+            res.headers["content-length"] || "0",
+            10,
+          );
+
           console.log(`📥 Resource check response:`);
           console.log(`   Status: ${statusCode}`);
           console.log(`   Content-Type: ${contentType}`);
           console.log(`   Content-Length: ${formatFileSize(contentLength)}`);
-          
-          const isSuccess = (statusCode >= 200 && statusCode < 400) || 
-                           (statusCode === 403 && contentType.includes('application/')) || 
-                           (statusCode === 401 && contentType.includes('application/'));
-          
+
+          const isSuccess =
+            (statusCode >= 200 && statusCode < 400) ||
+            (statusCode === 403 && contentType.includes("application/")) ||
+            (statusCode === 401 && contentType.includes("application/"));
+
           req.destroy();
-          
-          console.log(`   Result: ${isSuccess ? '✅ EXISTS' : '❌ NOT FOUND'}`);
+
+          console.log(`   Result: ${isSuccess ? "✅ EXISTS" : "❌ NOT FOUND"}`);
           resolve({ exists: isSuccess, contentLength });
         });
 
@@ -1582,7 +1749,7 @@ async function verifyResourceExists(url: string): Promise<{ exists: boolean; con
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
         console.log(`⏱️ Retrying verification in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     } catch (error) {
       console.log(`❌ Resource verification exception: ${error}`);
@@ -1590,7 +1757,7 @@ async function verifyResourceExists(url: string): Promise<{ exists: boolean; con
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
         console.log(`⏱️ Retrying verification in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
@@ -1600,14 +1767,19 @@ async function verifyResourceExists(url: string): Promise<{ exists: boolean; con
 }
 
 // ENHANCED: Download function with improved error handling and retry logic
-async function downloadFile(url: string, destination: string): Promise<boolean> {
+async function downloadFile(
+  url: string,
+  destination: string,
+): Promise<boolean> {
   const maxRetries = 3;
   let currentRetry = 0;
 
   while (currentRetry < maxRetries) {
     try {
-      console.log(`📥 Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
-      
+      console.log(
+        `📥 Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`,
+      );
+
       const success = await new Promise<boolean>((resolve) => {
         const protocol = url.startsWith("https") ? https : http;
         const file = fs.createWriteStream(destination);
@@ -1617,48 +1789,61 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
         // Enhanced request options
         const options = {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Referer': new URL(url).origin,
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            Accept: "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            Connection: "keep-alive",
+            Referer: new URL(url).origin,
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
           },
-          timeout: 60000 // Increased timeout to 60 seconds
+          timeout: 60000, // Increased timeout to 60 seconds
         };
 
         const req = protocol.get(url, options, (response) => {
           const statusCode = response.statusCode || 0;
-          
+
           console.log(`📥 Download response: ${statusCode} for ${url}`);
-          
+
           // Handle redirects
-          if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
+          if (
+            statusCode >= 300 &&
+            statusCode < 400 &&
+            response.headers.location
+          ) {
             file.close();
             fs.existsSync(destination) && fs.unlinkSync(destination);
-            
-            const redirectUrl = new URL(response.headers.location, url).toString();
+
+            const redirectUrl = new URL(
+              response.headers.location,
+              url,
+            ).toString();
             console.log(`↗️ Following redirect to: ${redirectUrl}`);
-            
+
             // Recursive call for redirect
             downloadFile(redirectUrl, destination).then(resolve);
             return;
           }
-          
+
           // Check if the response is successful
           if (statusCode >= 200 && statusCode < 300) {
             // Check content type
-            const contentType = response.headers['content-type'] || '';
+            const contentType = response.headers["content-type"] || "";
             console.log(`📄 Content-Type: ${contentType}`);
-            
+
             // Check content length
-            const contentLength = parseInt(response.headers['content-length'] || '0', 10);
+            const contentLength = parseInt(
+              response.headers["content-length"] || "0",
+              10,
+            );
             console.log(`📦 Content-Length: ${formatFileSize(contentLength)}`);
-            
+
             if (contentLength > config.allowedDownloads.maxFileSize) {
-              console.log(`⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`);
+              console.log(
+                `⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
+              );
               file.close();
               fs.existsSync(destination) && fs.unlinkSync(destination);
               if (!isResolved) {
@@ -1669,10 +1854,12 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
             }
 
             // Handle download progress
-            response.on('data', (chunk) => {
+            response.on("data", (chunk) => {
               downloadedSize += chunk.length;
               if (downloadedSize > config.allowedDownloads.maxFileSize) {
-                console.log(`⚠️ Download cancelled: File size exceeded during download`);
+                console.log(
+                  `⚠️ Download cancelled: File size exceeded during download`,
+                );
                 req.destroy();
                 file.close();
                 fs.existsSync(destination) && fs.unlinkSync(destination);
@@ -1685,15 +1872,17 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
             });
 
             response.pipe(file);
-            
+
             file.on("finish", () => {
               file.close();
-              
+
               // Verify the downloaded file
               if (fs.existsSync(destination)) {
                 const stats = fs.statSync(destination);
                 if (stats.size > 0) {
-                  console.log(`✅ Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`);
+                  console.log(
+                    `✅ Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`,
+                  );
                   if (!isResolved) {
                     isResolved = true;
                     resolve(true);
@@ -1724,7 +1913,6 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
                 resolve(false);
               }
             });
-
           } else {
             file.close();
             fs.existsSync(destination) && fs.unlinkSync(destination);
@@ -1766,7 +1954,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
         console.log(`⏱️ Retrying download in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     } catch (error) {
       console.log(`❌ Download exception: ${error}`);
@@ -1774,7 +1962,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
         console.log(`⏱️ Retrying download in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
@@ -1797,7 +1985,7 @@ function formatFileSize(bytes: number): string {
 // **NEW FUNCTION: Scan current page for download links**
 async function scanPageForDownloads(page: Page, pageName: string) {
   console.log(`🔍 Scanning "${pageName}" for download links...`);
-  
+
   const downloadLinks = await page.evaluate(() => {
     const downloads: Array<{
       text: string;
@@ -1810,16 +1998,16 @@ async function scanPageForDownloads(page: Page, pageName: string) {
     const downloadSelectors = [
       // Direct download links
       'a[href*=".zip"]',
-      'a[href*=".pdf"]', 
+      'a[href*=".pdf"]',
       'a[href*=".rar"]',
       'a[href*=".7z"]',
-      
+
       // Links with download keywords
       'a[href*="download"]',
       'a[href*="assets/"]',
       'a[href*="media/"]',
       'a[href*="files/"]',
-      
+
       // Press kit specific patterns
       'a[href*="product.zip"]',
       'a[href*="stills.zip"]',
@@ -1827,19 +2015,19 @@ async function scanPageForDownloads(page: Page, pageName: string) {
       'a[href*="campaign.zip"]',
       'a[href*="press.zip"]',
       'a[href*="gallery.zip"]',
-      
+
       // Text-based detection
       'a:has-text("download")',
-      'a:has-text("Download")', 
+      'a:has-text("Download")',
       'a:has-text("DOWNLOAD")',
-      'a[download]',
-      
+      "a[download]",
+
       // Class-based detection
-      '.download',
-      '.download-link',
-      '.download-btn',
-      '.asset-download',
-      
+      ".download",
+      ".download-link",
+      ".download-btn",
+      ".asset-download",
+
       // Press kit specific text patterns
       'a:has-text("stills")',
       'a:has-text("Stills")',
@@ -1848,47 +2036,59 @@ async function scanPageForDownloads(page: Page, pageName: string) {
       'a:has-text("High-Res")',
       'a:has-text("assets")',
       'a:has-text("Assets")',
-      'a:has-text("ASSETS")'
+      'a:has-text("ASSETS")',
     ];
 
     for (const selector of downloadSelectors) {
       try {
         const links = document.querySelectorAll(selector);
-        
+
         for (const link of links) {
-          const href = link.getAttribute('href');
-          if (!href || href === '#' || href.startsWith('javascript:') || href.startsWith('mailto:')) {
+          const href = link.getAttribute("href");
+          if (
+            !href ||
+            href === "#" ||
+            href.startsWith("javascript:") ||
+            href.startsWith("mailto:")
+          ) {
             continue;
           }
 
-          const text = link.textContent?.trim() || '';
+          // **ADD THIS NEW FILTER HERE** ⬇️
+          if (href.endsWith("/assets/") || href.endsWith("/assets")) {
+            continue; // Skip assets page URLs, they're not downloads
+          }
+          // **END OF NEW FILTER** ⬆️
+
+          const text = link.textContent?.trim() || "";
           if (!text) continue;
 
           // Determine if this is actually a download
-          const isDownload = href.includes('.pdf') || 
-                            href.includes('.zip') || 
-                            href.includes('.rar') ||
-                            href.includes('.7z') ||
-                            href.includes('/assets/') ||
-                            href.includes('/download') ||
-                            href.includes('/media/') ||
-                            href.includes('/files/') ||
-                            href.includes('product.zip') ||
-                            href.includes('stills.zip') ||
-                            href.includes('images.zip') ||
-                            href.includes('campaign.zip') ||
-                            text.toLowerCase().includes('download') ||
-                            text.toLowerCase().includes('stills') ||
-                            text.toLowerCase().includes('high-res') ||
-                            text.toLowerCase().includes('assets') ||
-                            link.hasAttribute('download');
+          const isDownload =
+            href.includes(".pdf") ||
+            href.includes(".zip") ||
+            href.includes(".rar") ||
+            href.includes(".7z") ||
+            href.includes("/assets/") ||
+            href.includes("/download") ||
+            href.includes("/media/") ||
+            href.includes("/files/") ||
+            href.includes("product.zip") ||
+            href.includes("stills.zip") ||
+            href.includes("images.zip") ||
+            href.includes("campaign.zip") ||
+            text.toLowerCase().includes("download") ||
+            text.toLowerCase().includes("stills") ||
+            text.toLowerCase().includes("high-res") ||
+            text.toLowerCase().includes("assets") ||
+            link.hasAttribute("download");
 
-          if (isDownload && !downloads.some(d => d.href === href)) {
+          if (isDownload && !downloads.some((d) => d.href === href)) {
             downloads.push({
               text,
               href,
               fullText: text,
-              isDownload: true
+              isDownload: true,
             });
           }
         }
@@ -1902,7 +2102,9 @@ async function scanPageForDownloads(page: Page, pageName: string) {
   });
 
   if (downloadLinks.length > 0) {
-    console.log(`📥 Found ${downloadLinks.length} download links on "${pageName}":`);
+    console.log(
+      `📥 Found ${downloadLinks.length} download links on "${pageName}":`,
+    );
     downloadLinks.forEach((link, idx) => {
       console.log(`   ${idx + 1}. 📥 ${link.text} (${link.href})`);
     });
