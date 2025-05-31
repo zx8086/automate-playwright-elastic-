@@ -6,20 +6,56 @@ import * as path from "path";
 import * as http from "http";
 import * as https from "https";
 import { config } from "../config";
+import { z } from "zod";
 
-interface PageLoadOptions {
-  timeout?: number;
-  imageTimeout?: number;
-  networkIdleTimeout?: number;
-}
+// Zod schemas for type validation
+const ElementCountsSchema = z.object({
+  images: z.number(),
+  paragraphs: z.number(),
+  headings: z.number(),
+  links: z.number(),
+  buttons: z.number()
+});
 
-interface PerformanceMetrics {
-  navigationTiming: PerformanceNavigationTiming;
-  paintTiming: PerformancePaintTiming[];
-  lcp?: PerformanceEntry;
-  cls?: PerformanceEntry;
-  longTasks?: PerformanceEntry[];
-}
+const NavigationPathSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  label: z.string(),
+  isDownloadable: z.boolean().optional(),
+  fileSize: z.number().optional(),
+  elementCounts: ElementCountsSchema.optional(),
+  fullText: z.string().optional(),
+  skippedReason: z.string().optional()
+});
+
+const SkippedDownloadSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  label: z.string(),
+  fileSize: z.number().optional(),
+  reason: z.string()
+});
+
+const PageLoadOptionsSchema = z.object({
+  timeout: z.number().optional(),
+  imageTimeout: z.number().optional(),
+  networkIdleTimeout: z.number().optional()
+});
+
+const PerformanceMetricsSchema = z.object({
+  navigationTiming: z.any(), // PerformanceNavigationTiming
+  paintTiming: z.array(z.any()), // PerformancePaintTiming[]
+  lcp: z.any().optional(), // PerformanceEntry
+  cls: z.any().optional(), // PerformanceEntry
+  longTasks: z.array(z.any()).optional() // PerformanceEntry[]
+});
+
+// Type inference from schemas
+type ElementCounts = z.infer<typeof ElementCountsSchema>;
+type NavigationPath = z.infer<typeof NavigationPathSchema>;
+type SkippedDownload = z.infer<typeof SkippedDownloadSchema>;
+type PageLoadOptions = z.infer<typeof PageLoadOptionsSchema>;
+type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;
 
 const logMemoryUsage = () => {
   const memUsage = process.memoryUsage();
@@ -66,30 +102,8 @@ test.describe("Site Navigation Test with Steps", () => {
   });
 
   test("step-by-step navigation through site menu items", async ({ page }) => {
-    const navigationPaths: Array<{
-      from: string;
-      to: string;
-      label: string;
-      isDownloadable?: boolean;
-      fileSize?: number;
-      elementCounts?: {
-        images: number;
-        paragraphs: number;
-        headings: number;
-        links: number;
-        buttons: number;
-      };
-      fullText?: string;
-      skippedReason?: string;
-    }> = [];
-
-    const skippedDownloads: Array<{
-      from: string;
-      to: string;
-      label: string;
-      fileSize?: number;
-      reason: string;
-    }> = [];
+    const navigationPaths: NavigationPath[] = [];
+    const skippedDownloads: SkippedDownload[] = [];
 
     // Track processed URLs to prevent duplicates
     const processedUrls = new Set<string>();
@@ -158,13 +172,16 @@ test.describe("Site Navigation Test with Steps", () => {
                 console.log(
                   `⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
                 );
-                skippedDownloads.push({
+                const skippedDownload: SkippedDownload = {
                   from: startUrl,
                   to: absoluteUrl,
                   label: item.text.replace(/\s+/g, " ").trim(),
                   fileSize: contentLength,
                   reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
-                });
+                };
+                // Validate before adding
+                SkippedDownloadSchema.parse(skippedDownload);
+                skippedDownloads.push(skippedDownload);
               } else {
                 const downloadSuccessful = await downloadFile(
                   absoluteUrl,
@@ -178,26 +195,31 @@ test.describe("Site Navigation Test with Steps", () => {
                   const stats = fs.statSync(downloadPath);
                   console.log(`File size: ${formatFileSize(stats.size)}`);
 
-                  // Add to navigation paths
-                  navigationPaths.push({
+                  // Add to navigation paths with validation
+                  const navigationPath: NavigationPath = {
                     from: startUrl,
                     to: absoluteUrl,
                     label: item.text,
                     isDownloadable: true,
                     fileSize: stats.size,
-                  });
+                  };
+                  NavigationPathSchema.parse(navigationPath);
+                  navigationPaths.push(navigationPath);
 
                   // Mark this download as processed
                   processedDownloads.add(absoluteUrl);
                 } else {
                   console.log(`⚠️ Download failed for: ${absoluteUrl}`);
-                  skippedDownloads.push({
+                  const skippedDownload: SkippedDownload = {
                     from: startUrl,
                     to: absoluteUrl,
                     label: item.text.replace(/\s+/g, " ").trim(),
                     fileSize: contentLength,
                     reason: "Download failed",
-                  });
+                  };
+                  // Validate before adding
+                  SkippedDownloadSchema.parse(skippedDownload);
+                  skippedDownloads.push(skippedDownload);
                 }
               }
             } else {
@@ -228,13 +250,16 @@ test.describe("Site Navigation Test with Steps", () => {
               // Get element counts for metadata
               const elementCounts = await getElementCounts(page);
 
-              navigationPaths.push({
+              // Add to navigation paths with validation
+              const navigationPath: NavigationPath = {
                 from: startUrl,
                 to: currentUrl,
                 label: item.text,
                 isDownloadable: false,
                 elementCounts: elementCounts,
-              });
+              };
+              NavigationPathSchema.parse(navigationPath);
+              navigationPaths.push(navigationPath);
 
               // Mark this URL as processed
               processedUrls.add(absoluteUrl);
@@ -296,14 +321,16 @@ test.describe("Site Navigation Test with Steps", () => {
                         // Get file size
                         const stats = fs.statSync(downloadPath);
                         console.log(`File size: ${formatFileSize(stats.size)}`);
-                        // Add to navigation paths as a downloadable resource
-                        navigationPaths.push({
+                        // Add to navigation paths as a downloadable resource with validation
+                        const navigationPath: NavigationPath = {
                           from: currentUrl,
                           to: downloadUrl,
                           label: `${downloadLink.text} (from ${item.text})`,
                           isDownloadable: true,
                           fileSize: stats.size,
-                        });
+                        };
+                        NavigationPathSchema.parse(navigationPath);
+                        navigationPaths.push(navigationPath);
                         // Mark this download as processed
                         processedDownloads.add(downloadUrl);
                       } else {
@@ -317,7 +344,7 @@ test.describe("Site Navigation Test with Steps", () => {
                           );
                           fs.existsSync(downloadPath) &&
                             fs.unlinkSync(downloadPath);
-                          skippedDownloads.push({
+                          const skippedDownload: SkippedDownload = {
                             from: startUrl,
                             to: downloadUrl,
                             label: downloadLink.text
@@ -325,9 +352,12 @@ test.describe("Site Navigation Test with Steps", () => {
                               .trim(),
                             fileSize: contentLength,
                             reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
-                          });
+                          };
+                          // Validate before adding
+                          SkippedDownloadSchema.parse(skippedDownload);
+                          skippedDownloads.push(skippedDownload);
                         } else {
-                          skippedDownloads.push({
+                          const skippedDownload: SkippedDownload = {
                             from: startUrl,
                             to: downloadUrl,
                             label: downloadLink.text
@@ -335,7 +365,10 @@ test.describe("Site Navigation Test with Steps", () => {
                               .trim(),
                             fileSize: contentLength,
                             reason: "Download failed",
-                          });
+                          };
+                          // Validate before adding
+                          SkippedDownloadSchema.parse(skippedDownload);
+                          skippedDownloads.push(skippedDownload);
                         }
                       }
                     } else {
@@ -429,14 +462,17 @@ test.describe("Site Navigation Test with Steps", () => {
 });
 
 // Helper function to get element counts for page metadata
-async function getElementCounts(page: Page) {
-  return {
+async function getElementCounts(page: Page): Promise<ElementCounts> {
+  const counts = {
     images: await page.locator("img").count(),
     paragraphs: await page.locator("p").count(),
     headings: await page.locator("h1, h2, h3, h4, h5, h6").count(),
     links: await page.locator("a").count(),
     buttons: await page.locator('button, [role="button"]').count(),
   };
+
+  // Validate the counts before returning
+  return ElementCountsSchema.parse(counts);
 }
 
 // ENHANCED: Identify navigation items with better detection
@@ -969,20 +1005,6 @@ async function exportElasticSyntheticsData(
   return syntheticsData;
 }
 
-interface PageLoadOptions {
-  timeout?: number;
-  imageTimeout?: number;
-  networkIdleTimeout?: number;
-}
-
-interface PerformanceMetrics {
-  navigationTiming: PerformanceNavigationTiming;
-  paintTiming: PerformancePaintTiming[];
-  lcp?: PerformanceEntry;
-  cls?: PerformanceEntry;
-  longTasks?: PerformanceEntry[];
-}
-
 function generateElasticSyntheticsTest(data: {
   baseUrl: string;
   pages: Array<{
@@ -1018,6 +1040,26 @@ function generateElasticSyntheticsTest(data: {
   let code = `/* ${config.server.domain}/${config.server.service}/${siteId}/core.journey.ts */
 
 import {journey, monitor, step} from '@elastic/synthetics';
+import { z } from 'zod';
+
+// Zod schemas for type validation
+const PageLoadOptionsSchema = z.object({
+  timeout: z.number().optional(),
+  imageTimeout: z.number().optional(),
+  networkIdleTimeout: z.number().optional()
+});
+
+const PerformanceMetricsSchema = z.object({
+  navigationTiming: z.any(), // PerformanceNavigationTiming
+  paintTiming: z.array(z.any()), // PerformancePaintTiming[]
+  lcp: z.any().optional(), // PerformanceEntry
+  cls: z.any().optional(), // PerformanceEntry
+  longTasks: z.array(z.any()).optional() // PerformanceEntry[]
+});
+
+// Type inference from schemas
+type PageLoadOptions = z.infer<typeof PageLoadOptionsSchema>;
+type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;
 
 journey('${monitorName}', async ({ page }) => {
     monitor.use({
@@ -1032,11 +1074,13 @@ journey('${monitorName}', async ({ page }) => {
 
     // Update the waitForFullPageLoad function with performance metrics
     const waitForFullPageLoad = async (pageType = 'default', options: PageLoadOptions = {}) => {
+        // Validate options
+        const validatedOptions = PageLoadOptionsSchema.parse(options);
         const {
             timeout = 10000,
             imageTimeout = 3000,
             networkIdleTimeout = 1000
-        } = options;
+        } = validatedOptions;
 
         const startTime = Date.now();
         console.log(\`🔄 Enhanced page load starting for \${pageType}...\`);
@@ -1183,14 +1227,32 @@ journey('${monitorName}', async ({ page }) => {
                     visible: true
                 }));
 
+                // Get performance metrics without validation
+                const performanceMetrics = {
+                    navigationTiming: performance.getEntriesByType('navigation')[0],
+                    paintTiming: performance.getEntriesByType('paint'),
+                    lcp: performance.getEntriesByType('largest-contentful-paint')[0],
+                    cls: performance.getEntriesByType('layout-shift')[0],
+                    longTasks: performance.getEntriesByType('longtask')
+                };
+
                 return {
                     isInteractive,
                     isLoading,
                     hasErrors,
                     errorDetails,
-                    readyState: document.readyState
+                    readyState: document.readyState,
+                    performanceMetrics
                 };
             });
+
+            // Validate performance metrics in Node.js context
+            try {
+                const validatedMetrics = PerformanceMetricsSchema.parse(pageLoadStatus.performanceMetrics);
+                console.log('✅ Performance metrics validated successfully');
+            } catch (error) {
+                console.log('⚠️ Performance metrics validation failed:', error.message);
+            }
 
             if (!pageLoadStatus.isInteractive) {
                 throw new Error(\`Page not interactive, readyState: \${pageLoadStatus.readyState}\`);
