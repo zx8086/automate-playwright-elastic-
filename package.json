@@ -3,7 +3,11 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "bun playwright test src/playwright.spec.ts"
+    "test": "bun playwright test src/playwright.spec.ts",
+    "synthetics": "npx @elastic/synthetics synthetics/core.journey.ts",
+    "synthetics:all": "npx @elastic/synthetics synthetics/",
+    "synthetics:push": "npx @elastic/synthetics push synthetics/core.journey.ts",
+    "generate-and-test": "bun run test && bun run synthetics"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
