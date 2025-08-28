@@ -1,4 +1,4 @@
-/* src/test.spec.ts - Enhanced version with comprehensive fixes */
+/* src/test.spec.ts */
 
 import { test, expect, Page } from "@playwright/test";
 import * as fs from "fs";
@@ -9,91 +9,109 @@ import { config } from "../config";
 import { z } from "zod";
 
 // Zod v4 schemas with enhanced validation and metadata
-const ElementCountsSchema = z.object({
-  images: z.number().int().nonnegative().describe("Number of images found"),
-  paragraphs: z.number().int().nonnegative().describe("Number of paragraphs found"),
-  headings: z.number().int().nonnegative().describe("Number of headings found"),
-  links: z.number().int().nonnegative().describe("Number of links found"),
-  buttons: z.number().int().nonnegative().describe("Number of buttons found")
-})
-.describe("Page element counts for analytics");
+const ElementCountsSchema = z
+  .object({
+    images: z.number().int().nonnegative().describe("Number of images found"),
+    paragraphs: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Number of paragraphs found"),
+    headings: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Number of headings found"),
+    links: z.number().int().nonnegative().describe("Number of links found"),
+    buttons: z.number().int().nonnegative().describe("Number of buttons found"),
+  })
+  .describe("Page element counts for analytics");
 
 // Zod v4 feature: Enhanced error reporting for broken links
-const BrokenLinkSchema = z.object({
-  url: z.string().url().or(z.string()),
-  pageFound: z.string(),
-  type: z.enum(['image', 'asset', 'download']),
-  altText: z.string().optional(),
-  suggestedFix: z.string().optional(),
-  statusCode: z.number().int().min(100).max(599).optional(),
-  error: z.string().max(500).optional()
-})
-.describe("Broken link information");
+const BrokenLinkSchema = z
+  .object({
+    url: z.string().url().or(z.string()),
+    pageFound: z.string(),
+    type: z.enum(["image", "asset", "download"]),
+    altText: z.string().optional(),
+    suggestedFix: z.string().optional(),
+    statusCode: z.number().int().min(100).max(599).optional(),
+    error: z.string().max(500).optional(),
+  })
+  .describe("Broken link information");
 
 // Zod v4 feature: Nested validation with cross-field checks
-const BrokenLinksReportSchema = z.object({
-  reportDate: z.string().datetime({ offset: true }),
-  baseUrl: z.string().url(),
-  totalBrokenLinks: z.number().int().nonnegative(),
-  brokenByPage: z.record(z.string(), z.array(BrokenLinkSchema)),
-  summary: z.object({
-    totalPages: z.number().int().nonnegative(),
-    pagesWithBrokenLinks: z.number().int().nonnegative(),
-    totalImages: z.number().int().nonnegative(),
-    brokenImages: z.number().int().nonnegative(),
-    totalAssets: z.number().int().nonnegative(),
-    brokenAssets: z.number().int().nonnegative()
+const BrokenLinksReportSchema = z
+  .object({
+    reportDate: z.string().datetime({ offset: true }),
+    baseUrl: z.string().url(),
+    totalBrokenLinks: z.number().int().nonnegative(),
+    brokenByPage: z.record(z.string(), z.array(BrokenLinkSchema)),
+    summary: z.object({
+      totalPages: z.number().int().nonnegative(),
+      pagesWithBrokenLinks: z.number().int().nonnegative(),
+      totalImages: z.number().int().nonnegative(),
+      brokenImages: z.number().int().nonnegative(),
+      totalAssets: z.number().int().nonnegative(),
+      brokenAssets: z.number().int().nonnegative(),
+    }),
   })
-})
-.refine(
-  (data) => data.summary.pagesWithBrokenLinks <= data.summary.totalPages,
-  { message: "Pages with broken links cannot exceed total pages" }
-)
-.describe("Complete broken links report");
+  .refine(
+    (data) => data.summary.pagesWithBrokenLinks <= data.summary.totalPages,
+    { message: "Pages with broken links cannot exceed total pages" },
+  )
+  .describe("Complete broken links report");
 
 type BrokenLink = z.infer<typeof BrokenLinkSchema>;
 type BrokenLinksReport = z.infer<typeof BrokenLinksReportSchema>;
 
 // Zod v4 feature: Advanced navigation path validation
-const NavigationPathSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().min(1),
-  label: z.string().min(1).max(200),
-  isDownloadable: z.boolean().default(false),
-  fileSize: z.number().int().positive().optional(),
-  elementCounts: ElementCountsSchema.optional(),
-  fullText: z.string().max(1000).optional(),
-  skippedReason: z.string().max(500).optional()
-})
-.describe("Navigation path between pages");
+const NavigationPathSchema = z
+  .object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+    label: z.string().min(1).max(200),
+    isDownloadable: z.boolean().default(false),
+    fileSize: z.number().int().positive().optional(),
+    elementCounts: ElementCountsSchema.optional(),
+    fullText: z.string().max(1000).optional(),
+    skippedReason: z.string().max(500).optional(),
+  })
+  .describe("Navigation path between pages");
 
 // Zod v4 feature: Skipped download tracking with validation
-const SkippedDownloadSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().min(1),
-  label: z.string().min(1).max(200),
-  fileSize: z.number().int().positive().optional(),
-  reason: z.string().min(1).max(500)
-})
-.describe("Information about skipped downloads");
+const SkippedDownloadSchema = z
+  .object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+    label: z.string().min(1).max(200),
+    fileSize: z.number().int().positive().optional(),
+    reason: z.string().min(1).max(500),
+  })
+  .describe("Information about skipped downloads");
 
 // Zod v4 feature: Page load options with sensible defaults
-const PageLoadOptionsSchema = z.object({
-  timeout: z.number().int().min(1000).max(60000).default(30000),
-  imageTimeout: z.number().int().min(1000).max(30000).default(10000),
-  networkIdleTimeout: z.number().int().min(500).max(10000).default(3000)
-})
-.describe("Page load timeout configuration");
+const PageLoadOptionsSchema = z
+  .object({
+    timeout: z.number().int().min(1000).max(60000).default(30000),
+    imageTimeout: z.number().int().min(1000).max(30000).default(10000),
+    networkIdleTimeout: z.number().int().min(500).max(10000).default(3000),
+  })
+  .describe("Page load timeout configuration");
 
 // Zod v4 feature: Performance metrics with proper typing
-const PerformanceMetricsSchema = z.object({
-  navigationTiming: z.any().describe("PerformanceNavigationTiming object"),
-  paintTiming: z.array(z.any()).describe("Array of PerformancePaintTiming"),
-  lcp: z.any().optional().describe("Largest Contentful Paint entry"),
-  cls: z.any().optional().describe("Cumulative Layout Shift entry"),
-  longTasks: z.array(z.any()).optional().describe("Array of long task entries")
-})
-.describe("Web performance metrics");
+const PerformanceMetricsSchema = z
+  .object({
+    navigationTiming: z.any().describe("PerformanceNavigationTiming object"),
+    paintTiming: z.array(z.any()).describe("Array of PerformancePaintTiming"),
+    lcp: z.any().optional().describe("Largest Contentful Paint entry"),
+    cls: z.any().optional().describe("Cumulative Layout Shift entry"),
+    longTasks: z
+      .array(z.any())
+      .optional()
+      .describe("Array of long task entries"),
+  })
+  .describe("Web performance metrics");
 
 // Type inference from schemas
 type ElementCounts = z.infer<typeof ElementCountsSchema>;
@@ -130,12 +148,55 @@ test.describe("Site Navigation Test with Steps", () => {
     // console.log('\nInitial Memory Usage:');
     // logMemoryUsage();
     globalBrokenLinks.clear();
+
+    // Clean up all output directories from previous runs
+    const directoriesToClean = [
+      { path: config.server.screenshotDir, name: "Screenshots" },
+      { path: config.server.downloadsDir, name: "Downloads" },
+      { path: config.server.syntheticsDir, name: "Synthetics" },
+      { path: "./broken-links-reports", name: "Broken Links Reports" },
+    ];
+
+    console.log("🧹 Cleaning up previous run artifacts...");
+    let totalFilesCleanedUp = 0;
+
+    for (const dir of directoriesToClean) {
+      try {
+        if (fs.existsSync(dir.path)) {
+          const files = fs.readdirSync(dir.path);
+          let cleanedCount = 0;
+
+          for (const file of files) {
+            const filePath = path.join(dir.path, file);
+            if (fs.statSync(filePath).isFile()) {
+              fs.unlinkSync(filePath);
+              cleanedCount++;
+              totalFilesCleanedUp++;
+            }
+          }
+
+          if (cleanedCount > 0) {
+            console.log(`🗑️  ${dir.name}: cleaned ${cleanedCount} file(s)`);
+          } else {
+            console.log(`✨ ${dir.name}: already clean`);
+          }
+        } else {
+          console.log(`📁 ${dir.name}: directory doesn't exist yet`);
+        }
+      } catch (error) {
+        console.log(`⚠️ Failed to clean up ${dir.name}: ${error.message}`);
+      }
+    }
+
+    console.log(
+      `✅ Cleanup complete: ${totalFilesCleanedUp} total file(s) removed\n`,
+    );
   });
 
   test.afterAll(async () => {
     // console.log('\nFinal Memory Usage:');
     // logMemoryUsage();
-    
+
     // Generate broken links report
     if (globalBrokenLinks.size > 0) {
       await generateBrokenLinksReport(globalBrokenLinks);
@@ -495,52 +556,66 @@ test.describe("Site Navigation Test with Steps", () => {
           );
         });
       }
-      
+
       // Count working asset links (from successful downloads)
       const workingAssetCount = processedDownloads.size;
-      
+
       // Add broken links summary if any were found
       if (globalBrokenLinks.size > 0) {
         let totalBroken = 0;
         for (const links of globalBrokenLinks.values()) {
           totalBroken += links.length;
         }
-        
+
         console.log("\n- Broken Links Found:");
-        console.log(`  ❌ Total: ${totalBroken} broken link(s) detected out of ${globalValidatedLinksCount} tested`);
-        
+        console.log(
+          `  ❌ Total: ${totalBroken} broken link(s) detected out of ${globalValidatedLinksCount} tested`,
+        );
+
         for (const [pageUrl, links] of globalBrokenLinks) {
-          const pageName = pageUrl.split('/').filter(Boolean).pop() || 'home';
+          const pageName = pageUrl.split("/").filter(Boolean).pop() || "home";
           console.log(`  - ${pageName} page: ${links.length} broken link(s)`);
         }
-        console.log("\n  ⚠️  See broken-links-reports/ directory for detailed report");
+        console.log(
+          "\n  ⚠️  See broken-links-reports/ directory for detailed report",
+        );
       } else {
         console.log("\n- Link Validation:");
-        
+
         // Show total links validated including images, videos and downloads
-        const totalValidated = globalValidatedLinksCount + globalVideosValidated + workingAssetCount;
-        const totalFound = globalTotalLinksFound + globalVideosFound + workingAssetCount;
-        
+        const totalValidated =
+          globalValidatedLinksCount + globalVideosValidated + workingAssetCount;
+        const totalFound =
+          globalTotalLinksFound + globalVideosFound + workingAssetCount;
+
         if (totalValidated > 0) {
           console.log(`  ✅ All links are working correctly`);
-          
+
           // Show total found vs validated
           if (totalFound > totalValidated) {
-            console.log(`  📊 Successfully validated ${totalValidated} link(s) out of ${totalFound} found:`);
+            console.log(
+              `  📊 Successfully validated ${totalValidated} link(s) out of ${totalFound} found:`,
+            );
           } else {
-            console.log(`  📊 Successfully validated ${totalValidated} link(s):`);
+            console.log(
+              `  📊 Successfully validated ${totalValidated} link(s):`,
+            );
           }
-          
+
           if (globalValidatedLinksCount > 0) {
             if (globalTotalLinksFound > globalValidatedLinksCount) {
-              console.log(`     - Asset images: ${globalValidatedLinksCount} validated (${globalTotalLinksFound} total found)`);
+              console.log(
+                `     - Asset images: ${globalValidatedLinksCount} validated (${globalTotalLinksFound} total found)`,
+              );
             } else {
               console.log(`     - Asset images: ${globalValidatedLinksCount}`);
             }
           }
           if (globalVideosValidated > 0) {
             if (globalVideosFound > globalVideosValidated) {
-              console.log(`     - Videos: ${globalVideosValidated} validated (${globalVideosFound} total found)`);
+              console.log(
+                `     - Videos: ${globalVideosValidated} validated (${globalVideosFound} total found)`,
+              );
             } else {
               console.log(`     - Videos: ${globalVideosValidated}`);
             }
@@ -594,8 +669,7 @@ async function getElementCounts(page: Page): Promise<ElementCounts> {
   return ElementCountsSchema.parse(counts);
 }
 
-// ENHANCED: Identify navigation items with better detection
-// ENHANCED: Identify navigation items with better detection
+// Identify navigation items with better detection
 async function identifyNavigation(page: Page) {
   console.log("🔍 Analyzing navigation structure with enhanced detection...");
 
@@ -921,67 +995,73 @@ async function checkPageSpecificElements(
         )
         .count();
       console.log(`   - High-res/optimized images: ${hiResImages}`);
-      
+
       // NEW: Validate individual asset images on asset pages if enabled
       if (config.allowedDownloads.validateAssetImages) {
         console.log(`\n🔍 Validating individual asset images...`);
         const assetImages = await validateAssetImages(page);
-        
+
         // Collect broken links for global report
         const pageUrl = page.url();
         const pageBrokenLinks: BrokenLink[] = [];
-        
+
         if (assetImages.brokenImages.length > 0) {
-          console.log(`\n❌ Found ${assetImages.brokenImages.length} broken links:`);
+          console.log(
+            `\n❌ Found ${assetImages.brokenImages.length} broken links:`,
+          );
           assetImages.brokenImages.forEach((img, index) => {
             console.log(`   ${index + 1}. ${img.src}`);
             if (img.statusCode) {
               console.log(`      Status: ${img.statusCode}`);
             }
-            
+
             // Add to broken links collection
             pageBrokenLinks.push({
               url: img.src,
               pageFound: pageUrl,
-              type: 'image',
+              type: "image",
               altText: img.alt || undefined,
               suggestedFix: img.correctedUrl,
               statusCode: img.statusCode,
-              error: img.error
+              error: img.error,
             });
           });
-          
+
           // Store broken links for this page
           if (pageBrokenLinks.length > 0) {
             globalBrokenLinks.set(pageUrl, pageBrokenLinks);
           }
-          
+
           // Create a summary report
           const brokenReport = {
             pageUrl: page.url(),
-            totalImages: assetImages.validImages.length + assetImages.brokenImages.length,
+            totalImages:
+              assetImages.validImages.length + assetImages.brokenImages.length,
             brokenCount: assetImages.brokenImages.length,
-            validCount: assetImages.validImages.length
+            validCount: assetImages.validImages.length,
           };
-          
+
           console.log(`\n📊 Link validation summary for ${pageName}:`);
           console.log(`   Total links checked: ${brokenReport.totalImages}`);
           console.log(`   ✅ Valid: ${brokenReport.validCount}`);
           console.log(`   ❌ BROKEN: ${brokenReport.brokenCount}`);
         } else if (assetImages.validImages.length > 0) {
-          console.log(`✅ All ${assetImages.validImages.length} asset images are valid and accessible`);
+          console.log(
+            `✅ All ${assetImages.validImages.length} asset images are valid and accessible`,
+          );
         }
-        
+
         // Track total validated links globally
-        const totalValidatedOnPage = assetImages.validImages.length + assetImages.brokenImages.length;
+        const totalValidatedOnPage =
+          assetImages.validImages.length + assetImages.brokenImages.length;
         globalValidatedLinksCount += totalValidatedOnPage;
         globalWorkingLinksCount += assetImages.validImages.length;
-        
+
         // Don't download anything - we're only checking for broken links
         // Return empty array since we're not downloading broken assets
         return [];
       }
-      
+
       // Return empty array if validation is disabled
       return [];
     } else if (
@@ -1032,15 +1112,17 @@ async function checkPageSpecificElements(
 
     // **NEW: SCAN FOR DOWNLOAD LINKS ON THIS PAGE**
     // For asset pages, we've already handled this in validateAssetImages
-    if (pageNameLower.includes("asset") || 
-        pageNameLower.includes("image") || 
-        pageNameLower.includes("media") || 
-        pageNameLower.includes("gallery") || 
-        pageNameLower.includes("stills")) {
+    if (
+      pageNameLower.includes("asset") ||
+      pageNameLower.includes("image") ||
+      pageNameLower.includes("media") ||
+      pageNameLower.includes("gallery") ||
+      pageNameLower.includes("stills")
+    ) {
       // Asset pages already handled above with validateAssetImages
       return [];
     }
-    
+
     const pageDownloadLinks = await scanPageForDownloads(page, pageName);
 
     // **NEW: RETURN THE DOWNLOAD LINKS FOUND ON THIS PAGE**
@@ -1920,26 +2002,48 @@ function isDownloadableResource(url: string): boolean {
 // Validate all images and links on the page to detect broken URLs
 async function validateAssetImages(page: Page): Promise<{
   validImages: Array<{ src: string; alt: string }>;
-  brokenImages: Array<{ src: string; alt: string; correctedUrl?: string; statusCode?: number; error?: string }>;
-  downloadableAssets: Array<{ text: string; href: string; fullText: string; isDownload: boolean }>;
+  brokenImages: Array<{
+    src: string;
+    alt: string;
+    correctedUrl?: string;
+    statusCode?: number;
+    error?: string;
+  }>;
+  downloadableAssets: Array<{
+    text: string;
+    href: string;
+    fullText: string;
+    isDownload: boolean;
+  }>;
 }> {
   const results = {
     validImages: [] as Array<{ src: string; alt: string }>,
-    brokenImages: [] as Array<{ src: string; alt: string; correctedUrl?: string; statusCode?: number; error?: string }>,
-    downloadableAssets: [] as Array<{ text: string; href: string; fullText: string; isDownload: boolean }>
+    brokenImages: [] as Array<{
+      src: string;
+      alt: string;
+      correctedUrl?: string;
+      statusCode?: number;
+      error?: string;
+    }>,
+    downloadableAssets: [] as Array<{
+      text: string;
+      href: string;
+      fullText: string;
+      isDownload: boolean;
+    }>,
   };
 
   try {
     // Get all images on the page
-    const images = await page.$$eval('img', imgs => 
-      imgs.map(img => ({
-        src: img.src || img.getAttribute('data-src') || '',
-        alt: img.alt || '',
+    const images = await page.$$eval("img", (imgs) =>
+      imgs.map((img) => ({
+        src: img.src || img.getAttribute("data-src") || "",
+        alt: img.alt || "",
         naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight
-      }))
+        naturalHeight: img.naturalHeight,
+      })),
     );
-    
+
     // Debug: Log first few image URLs to see what we're checking
     console.log(`   Sample image URLs being checked:`);
     images.slice(0, 3).forEach((img, i) => {
@@ -1948,36 +2052,41 @@ async function validateAssetImages(page: Page): Promise<{
 
     // Track total images found globally
     globalTotalLinksFound += images.length;
-    
+
     // Use configurable limit for image validation
-    const maxImagesToValidate = Math.min(images.length, config.allowedDownloads.maxImagesToValidate || 200);
+    const maxImagesToValidate = Math.min(
+      images.length,
+      config.allowedDownloads.maxImagesToValidate || 200,
+    );
     const imagesToValidate = images.slice(0, maxImagesToValidate);
-    
-    console.log(`   Found ${images.length} images, validating ${Math.min(images.length, maxImagesToValidate)}...`);
+
+    console.log(
+      `   Found ${images.length} images, validating ${Math.min(images.length, maxImagesToValidate)}...`,
+    );
 
     // No URL-specific logic - just check if links work
 
     // Validate each image - ONLY CHECK IF BROKEN, DON'T TRY TO FIX
     for (const img of imagesToValidate) {
       if (!img.src) continue;
-      
+
       try {
         // Simply check if the URL works
         const check = await verifyResourceExists(img.src, true);
-        
+
         if (check.exists) {
           results.validImages.push({
             src: img.src,
-            alt: img.alt
+            alt: img.alt,
           });
         } else {
           // URL is broken - report it
           results.brokenImages.push({
             src: img.src,
             alt: img.alt,
-            correctedUrl: undefined,  // No suggestions, just report broken
+            correctedUrl: undefined, // No suggestions, just report broken
             statusCode: check.statusCode,
-            error: check.error || 'Resource not found'
+            error: check.error || "Resource not found",
           });
         }
       } catch (error) {
@@ -1985,43 +2094,52 @@ async function validateAssetImages(page: Page): Promise<{
         results.brokenImages.push({
           src: img.src,
           alt: img.alt,
-          error: error instanceof Error ? error.message : 'Invalid URL or unknown error'
+          error:
+            error instanceof Error
+              ? error.message
+              : "Invalid URL or unknown error",
         });
       }
     }
 
     // Also check for clickable asset links (images wrapped in anchor tags)
-    const assetLinks = await page.$$eval('a[href*="/assets/"]', links => 
-      links.map(link => ({
+    const assetLinks = await page.$$eval('a[href*="/assets/"]', (links) =>
+      links.map((link) => ({
         href: (link as HTMLAnchorElement).href,
-        text: (link as HTMLAnchorElement).textContent?.trim() || '',
-        innerHTML: (link as HTMLAnchorElement).innerHTML
-      }))
+        text: (link as HTMLAnchorElement).textContent?.trim() || "",
+        innerHTML: (link as HTMLAnchorElement).innerHTML,
+      })),
     );
-    
+
     // Also check for video links if configured
-    const videoSelectors = 'video source, iframe[src*="youtube"], iframe[src*="vimeo"], a[href*=".mp4"], a[href*=".mov"], a[href*=".webm"]';
-    const videoElements = await page.$$eval(videoSelectors, elements => 
-      elements.map(el => {
-        if (el.tagName === 'SOURCE') {
-          return { url: (el as HTMLSourceElement).src, type: 'video' };
-        } else if (el.tagName === 'IFRAME') {
-          return { url: (el as HTMLIFrameElement).src, type: 'embed' };
-        } else if (el.tagName === 'A') {
-          return { url: (el as HTMLAnchorElement).href, type: 'download' };
-        }
-        return null;
-      }).filter(Boolean)
+    const videoSelectors =
+      'video source, iframe[src*="youtube"], iframe[src*="vimeo"], a[href*=".mp4"], a[href*=".mov"], a[href*=".webm"]';
+    const videoElements = await page.$$eval(videoSelectors, (elements) =>
+      elements
+        .map((el) => {
+          if (el.tagName === "SOURCE") {
+            return { url: (el as HTMLSourceElement).src, type: "video" };
+          } else if (el.tagName === "IFRAME") {
+            return { url: (el as HTMLIFrameElement).src, type: "embed" };
+          } else if (el.tagName === "A") {
+            return { url: (el as HTMLAnchorElement).href, type: "download" };
+          }
+          return null;
+        })
+        .filter(Boolean),
     );
-    
+
     // Validate videos if any found
-    const maxVideosToValidate = config.allowedDownloads.maxVideosToValidate || 50;
+    const maxVideosToValidate =
+      config.allowedDownloads.maxVideosToValidate || 50;
     if (videoElements.length > 0) {
-      console.log(`   Found ${videoElements.length} video links, validating up to ${maxVideosToValidate}...`);
+      console.log(
+        `   Found ${videoElements.length} video links, validating up to ${maxVideosToValidate}...`,
+      );
       const videosToCheck = videoElements.slice(0, maxVideosToValidate);
-      
+
       for (const video of videosToCheck) {
-        if (video && typeof video === 'object' && 'url' in video) {
+        if (video && typeof video === "object" && "url" in video) {
           const check = await verifyResourceExists(video.url, true);
           if (!check.exists) {
             globalBrokenVideos++;
@@ -2030,37 +2148,41 @@ async function validateAssetImages(page: Page): Promise<{
               alt: `Video (${video.type})`,
               correctedUrl: undefined,
               statusCode: check.statusCode,
-              error: check.error || 'Resource not found'
+              error: check.error || "Resource not found",
             });
           }
         }
       }
-      
+
       // Track video statistics separately
       globalVideosFound += videoElements.length;
-      globalVideosValidated += Math.min(videoElements.length, maxVideosToValidate);
+      globalVideosValidated += Math.min(
+        videoElements.length,
+        maxVideosToValidate,
+      );
     }
 
     // Check these links for broken ones too
     for (const link of assetLinks) {
       if (link.href.match(/\.(jpg|jpeg|png|gif|webp|pdf|zip)$/i)) {
         const check = await verifyResourceExists(link.href, true);
-        
+
         if (!check.exists) {
           // This is a broken download link - just report it
           results.brokenImages.push({
             src: link.href,
-            alt: link.text || 'Download link',
+            alt: link.text || "Download link",
             correctedUrl: undefined,
             statusCode: check.statusCode,
-            error: check.error || 'Resource not found'
+            error: check.error || "Resource not found",
           });
         }
       }
     }
-
   } catch (error) {
-    console.log(`⚠️ Error validating asset images: ${error instanceof Error ? error.message : String(error)}`);
+    console.log(
+      `⚠️ Error validating asset images: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   return results;
@@ -2069,9 +2191,14 @@ async function validateAssetImages(page: Page): Promise<{
 // Better resource verification with proper headers and retry logic
 async function verifyResourceExists(
   url: string,
-  silent: boolean = false
-): Promise<{ exists: boolean; contentLength?: number; statusCode?: number; error?: string }> {
-  const maxRetries = silent ? 1 : 3;  // Fewer retries for bulk validation
+  silent: boolean = false,
+): Promise<{
+  exists: boolean;
+  contentLength?: number;
+  statusCode?: number;
+  error?: string;
+}> {
+  const maxRetries = silent ? 1 : 3; // Fewer retries for bulk validation
   let currentRetry = 0;
 
   while (currentRetry < maxRetries) {
@@ -2091,7 +2218,7 @@ async function verifyResourceExists(
         const protocol = url.startsWith("https") ? https : http;
 
         const options = {
-          method: "HEAD",  // Use HEAD for faster validation without downloading
+          method: "HEAD", // Use HEAD for faster validation without downloading
           headers: {
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -2104,7 +2231,7 @@ async function verifyResourceExists(
             "Cache-Control": "no-cache",
             Pragma: "no-cache",
           },
-          timeout: silent ? 5000 : 30000,  // Shorter timeout for bulk validation
+          timeout: silent ? 5000 : 30000, // Shorter timeout for bulk validation
         };
 
         const req = protocol.request(url, options, (res) => {
@@ -2125,13 +2252,16 @@ async function verifyResourceExists(
           // Some servers return 405 for HEAD requests - treat as success if it's an image
           const isSuccess =
             (statusCode >= 200 && statusCode < 400) ||
-            (statusCode === 405 && url.match(/\.(jpg|jpeg|png|gif|webp|tiff|bmp)$/i));  // Method not allowed for HEAD on images
+            (statusCode === 405 &&
+              url.match(/\.(jpg|jpeg|png|gif|webp|tiff|bmp)$/i)); // Method not allowed for HEAD on images
           // Note: 403 Forbidden and 401 Unauthorized should NEVER be treated as success
 
           req.destroy();
 
           if (!silent) {
-            console.log(`   Result: ${isSuccess ? "✅ EXISTS" : "❌ NOT FOUND"}`);
+            console.log(
+              `   Result: ${isSuccess ? "✅ EXISTS" : "❌ NOT FOUND"}`,
+            );
           }
           resolve({ exists: isSuccess, contentLength, statusCode });
         });
@@ -2148,7 +2278,7 @@ async function verifyResourceExists(
           if (!silent) {
             console.log(`⏱️ Resource verification timeout`);
           }
-          resolve({ exists: false, error: 'Request timeout' });
+          resolve({ exists: false, error: "Request timeout" });
         });
 
         req.end();
@@ -2182,9 +2312,11 @@ async function verifyResourceExists(
   }
 
   if (!silent) {
-    console.log(`❌ All ${maxRetries} verification attempts failed for: ${url}`);
+    console.log(
+      `❌ All ${maxRetries} verification attempts failed for: ${url}`,
+    );
   }
-  return { exists: false, error: 'All verification attempts failed' };
+  return { exists: false, error: "All verification attempts failed" };
 }
 
 // ENHANCED: Download function with improved error handling and retry logic
@@ -2404,29 +2536,31 @@ function formatFileSize(bytes: number): string {
 }
 
 // Generate comprehensive broken links report
-async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>) {
+async function generateBrokenLinksReport(
+  brokenLinks: Map<string, BrokenLink[]>,
+) {
   if (brokenLinks.size === 0) {
     console.log("\n✅ No broken links found during validation!");
     return;
   }
-  
+
   // Calculate summary statistics
   let totalBrokenLinks = 0;
   let totalImages = 0;
   let totalAssets = 0;
-  
+
   const brokenByPage: Record<string, BrokenLink[]> = {};
-  
+
   for (const [pageUrl, links] of brokenLinks) {
     brokenByPage[pageUrl] = links;
     totalBrokenLinks += links.length;
-    
-    links.forEach(link => {
-      if (link.type === 'image') totalImages++;
-      if (link.type === 'asset') totalAssets++;
+
+    links.forEach((link) => {
+      if (link.type === "image") totalImages++;
+      if (link.type === "asset") totalAssets++;
     });
   }
-  
+
   // Create report data
   const report: BrokenLinksReport = {
     reportDate: new Date().toISOString(),
@@ -2439,94 +2573,98 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
       totalImages: totalImages,
       brokenImages: totalImages,
       totalAssets: totalAssets,
-      brokenAssets: totalAssets
-    }
+      brokenAssets: totalAssets,
+    },
   };
-  
+
   // Create reports directory if it doesn't exist
-  const reportsDir = './broken-links-reports';
+  const reportsDir = "./broken-links-reports";
   if (!fs.existsSync(reportsDir)) {
     fs.mkdirSync(reportsDir, { recursive: true });
   }
-  
+
   // Generate timestamp for unique filenames
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-  
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+
   // Write JSON report
   const jsonPath = path.join(reportsDir, `broken-links-${timestamp}.json`);
   fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2));
-  
+
   // Generate Markdown report
   let markdown = `# Broken Links Report\n\n`;
   markdown += `**Date:** ${new Date().toLocaleString()}\n`;
   markdown += `**Base URL:** ${config.server.baseUrl}\n`;
   markdown += `**Total Broken Links:** ${totalBrokenLinks}\n\n`;
-  
+
   markdown += `## Summary\n\n`;
   markdown += `- Pages with broken links: ${report.summary.pagesWithBrokenLinks}\n`;
   markdown += `- Broken images: ${report.summary.brokenImages}\n`;
   markdown += `- Broken assets: ${report.summary.brokenAssets}\n\n`;
-  
+
   markdown += `## Broken Links by Page\n\n`;
-  
+
   for (const [pageUrl, links] of Object.entries(brokenByPage)) {
     markdown += `### Page: ${pageUrl}\n\n`;
     markdown += `Found ${links.length} broken link(s):\n\n`;
-    
+
     links.forEach((link, index) => {
       markdown += `#### ${index + 1}. ${link.type.toUpperCase()}: ${link.url}\n\n`;
-      
+
       if (link.altText) {
         markdown += `- **Alt Text:** ${link.altText}\n`;
       }
-      
+
       if (link.statusCode) {
         markdown += `- **Status Code:** ${link.statusCode}\n`;
       }
-      
+
       if (link.error) {
         markdown += `- **Error:** ${link.error}\n`;
       }
-      
+
       if (link.suggestedFix) {
         markdown += `- **Suggested Fix:** \`${link.suggestedFix}\`\n`;
       }
-      
+
       markdown += `\n`;
     });
-    
+
     markdown += `---\n\n`;
   }
-  
+
   // Write Markdown report
   const mdPath = path.join(reportsDir, `broken-links-${timestamp}.md`);
   fs.writeFileSync(mdPath, markdown);
-  
+
   // Also write a latest version for easy access
-  const latestJsonPath = path.join(reportsDir, 'broken-links-latest.json');
-  const latestMdPath = path.join(reportsDir, 'broken-links-latest.md');
+  const latestJsonPath = path.join(reportsDir, "broken-links-latest.json");
+  const latestMdPath = path.join(reportsDir, "broken-links-latest.md");
   fs.writeFileSync(latestJsonPath, JSON.stringify(report, null, 2));
   fs.writeFileSync(latestMdPath, markdown);
-  
+
   // Console output with clear summary
   console.log("\n" + "=".repeat(80));
   console.log("📊 BROKEN LINKS REPORT GENERATED");
   console.log("=".repeat(80));
   console.log(`\n🔴 Total Broken Links Found: ${totalBrokenLinks}`);
-  console.log(`\n📍 Pages with Issues (${report.summary.pagesWithBrokenLinks}):\n`);
-  
+  console.log(
+    `\n📍 Pages with Issues (${report.summary.pagesWithBrokenLinks}):\n`,
+  );
+
   for (const [pageUrl, links] of Object.entries(brokenByPage)) {
     console.log(`\n  ${pageUrl}`);
     console.log(`  └─ ${links.length} broken link(s):\n`);
-    
+
     links.forEach((link, index) => {
-      console.log(`     ${index + 1}. [${link.type.toUpperCase()}] ${link.url}`);
+      console.log(
+        `     ${index + 1}. [${link.type.toUpperCase()}] ${link.url}`,
+      );
       if (link.suggestedFix) {
         console.log(`        → Suggested: ${link.suggestedFix}`);
       }
     });
   }
-  
+
   console.log("\n" + "=".repeat(80));
   console.log("📁 Reports saved to:");
   console.log(`   JSON: ${jsonPath}`);
