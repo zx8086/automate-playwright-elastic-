@@ -1232,30 +1232,21 @@ function generateElasticSyntheticsTest(data: {
   let code = `/* ${config.server.domain}/${config.server.service}/${siteId}/core.journey.ts */
 
 import {journey, monitor, step} from '@elastic/synthetics';
-import { z } from 'zod';
 
-// Zod schemas for type validation
-// Zod v4 feature: Page load options with sensible defaults
-const PageLoadOptionsSchema = z.object({
-  timeout: z.number().int().min(1000).max(60000).default(30000),
-  imageTimeout: z.number().int().min(1000).max(30000).default(10000),
-  networkIdleTimeout: z.number().int().min(500).max(10000).default(3000)
-})
-.describe("Page load timeout configuration");
+// TypeScript interfaces for type validation
+interface PageLoadOptions {
+  timeout?: number;
+  imageTimeout?: number;
+  networkIdleTimeout?: number;
+}
 
-// Zod v4 feature: Performance metrics with proper typing
-const PerformanceMetricsSchema = z.object({
-  navigationTiming: z.any().describe("PerformanceNavigationTiming object"),
-  paintTiming: z.array(z.any()).describe("Array of PerformancePaintTiming"),
-  lcp: z.any().optional().describe("Largest Contentful Paint entry"),
-  cls: z.any().optional().describe("Cumulative Layout Shift entry"),
-  longTasks: z.array(z.any()).optional().describe("Array of long task entries")
-})
-.describe("Web performance metrics");
-
-// Type inference from schemas
-type PageLoadOptions = z.infer<typeof PageLoadOptionsSchema>;
-type PerformanceMetrics = z.infer<typeof PerformanceMetricsSchema>;
+interface PerformanceMetrics {
+  navigationTiming?: any;
+  paintTiming?: any[];
+  lcp?: any;
+  cls?: any;
+  longTasks?: any[];
+}
 
 journey('${monitorName}', async ({ page }) => {
     monitor.use({
@@ -1270,13 +1261,10 @@ journey('${monitorName}', async ({ page }) => {
 
     // Update the waitForFullPageLoad function with performance metrics
     const waitForFullPageLoad = async (pageType = 'default', options: PageLoadOptions = {}) => {
-        // Validate options
-        const validatedOptions = PageLoadOptionsSchema.parse(options);
-        const {
-            timeout = 10000,
-            imageTimeout = 3000,
-            networkIdleTimeout = 1000
-        } = validatedOptions;
+        // Apply default values and basic validation
+        const timeout = Math.min(Math.max(options.timeout || 10000, 1000), 60000);
+        const imageTimeout = Math.min(Math.max(options.imageTimeout || 3000, 1000), 30000);
+        const networkIdleTimeout = Math.min(Math.max(options.networkIdleTimeout || 1000, 500), 10000);
 
         const startTime = Date.now();
         console.log(\`🔄 Enhanced page load starting for \${pageType}...\`);
@@ -1442,12 +1430,11 @@ journey('${monitorName}', async ({ page }) => {
                 };
             });
 
-            // Validate performance metrics in Node.js context
-            try {
-                const validatedMetrics = PerformanceMetricsSchema.parse(pageLoadStatus.performanceMetrics);
-                console.log('✅ Performance metrics validated successfully');
-            } catch (error) {
-                console.log('⚠️ Performance metrics validation failed:', error.message);
+            // Log performance metrics (basic validation)
+            if (pageLoadStatus.performanceMetrics) {
+                console.log('✅ Performance metrics collected successfully');
+            } else {
+                console.log('⚠️ Performance metrics not available');
             }
 
             if (!pageLoadStatus.isInteractive) {
