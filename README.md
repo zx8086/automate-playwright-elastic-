@@ -1,4 +1,4 @@
-# Automate Playwright Elastic
+# Automate Playwright & Elastic Synthetic Generation
 
 [![Powered by Bun](https://img.shields.io/badge/Powered%20by-Bun-000000?style=for-the-badge&logo=bun&logoColor=white)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -346,7 +346,7 @@ Modify the `identifyNavigation` function in `src/playwright.spec.ts`:
 const navSelectors = [
     // Press kit specific selectors
     ".press-kit-nav a", ".presskit-nav a", ".pk-nav a",
-    
+
     // Tommy Hilfiger specific patterns
     'a[href*=".html"]',  // Page links
     'a[href*=".pdf"]',   // PDF downloads

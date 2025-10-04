@@ -8,7 +8,6 @@ import { type Page, test } from "@playwright/test";
 import { z } from "zod";
 import { config } from "../config";
 
-// Zod v4 schemas with enhanced validation and metadata
 const ElementCountsSchema = z
   .object({
     images: z.number().int().nonnegative().describe("Number of images found"),
@@ -19,7 +18,6 @@ const ElementCountsSchema = z
   })
   .describe("Page element counts for analytics");
 
-// Zod v4 feature: Enhanced error reporting for broken links
 const BrokenLinkSchema = z
   .object({
     url: z.string().url().or(z.string()),
@@ -34,7 +32,6 @@ const BrokenLinkSchema = z
   })
   .describe("Broken link information");
 
-// Zod v4 feature: Nested validation with cross-field checks
 const BrokenLinksReportSchema = z
   .object({
     reportDate: z.string().datetime({ offset: true }),
@@ -58,7 +55,6 @@ const BrokenLinksReportSchema = z
 type BrokenLink = z.infer<typeof BrokenLinkSchema>;
 type BrokenLinksReport = z.infer<typeof BrokenLinksReportSchema>;
 
-// Zod v4 feature: Advanced navigation path validation
 const NavigationPathSchema = z
   .object({
     from: z.string().min(1),
@@ -72,7 +68,6 @@ const NavigationPathSchema = z
   })
   .describe("Navigation path between pages");
 
-// Zod v4 feature: Skipped download tracking with validation
 const SkippedDownloadSchema = z
   .object({
     from: z.string().min(1),
@@ -83,7 +78,6 @@ const SkippedDownloadSchema = z
   })
   .describe("Information about skipped downloads");
 
-// Zod v4 feature: Page load options with sensible defaults
 const _PageLoadOptionsSchema = z
   .object({
     timeout: z.number().int().min(1000).max(60000).default(30000),
@@ -92,7 +86,6 @@ const _PageLoadOptionsSchema = z
   })
   .describe("Page load timeout configuration");
 
-// Zod v4 feature: Performance metrics with proper typing
 const _PerformanceMetricsSchema = z
   .object({
     navigationTiming: z.any().describe("PerformanceNavigationTiming object"),
