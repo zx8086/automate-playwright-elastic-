@@ -8,12 +8,7 @@ import { z } from "zod";
 if (typeof Bun === "undefined") {
   dotenv.config();
 }
-const EnvironmentType = z.enum([
-  "development",
-  "staging",
-  "production",
-  "test",
-]);
+const EnvironmentType = z.enum(["development", "staging", "production", "test"]);
 const ScreenshotMode = z.enum(["on", "off", "only-on-failure"]);
 const VideoMode = z.enum(["on", "off", "retain-on-failure"]);
 const TraceMode = z.enum(["on", "off", "retain-on-failure"]);
@@ -22,11 +17,9 @@ const DirectoryPath = z
   .string()
   .refine(
     (val) => {
-      return (
-        val.startsWith("./") || val.startsWith("/") || val.startsWith("../")
-      );
+      return val.startsWith("./") || val.startsWith("/") || val.startsWith("../");
     },
-    { message: "Directory path must be relative (./) or absolute (/)" },
+    { message: "Directory path must be relative (./) or absolute (/)" }
   )
   .transform((val) => {
     const fullPath = path.resolve(val);
@@ -36,15 +29,11 @@ const DirectoryPath = z
     return val;
   });
 
-const HttpsUrl = z
-  .url()
-  .refine((url) => url.startsWith("https://") || url.startsWith("http://"), {
-    message: "URL must use HTTP or HTTPS protocol",
-  });
+const HttpsUrl = z.url().refine((url) => url.startsWith("https://") || url.startsWith("http://"), {
+  message: "URL must use HTTP or HTTPS protocol",
+});
 
-const PositiveInt = z
-  .int32()
-  .positive({ message: "Must be a positive integer" });
+const PositiveInt = z.int32().positive({ message: "Must be a positive integer" });
 
 const FileSizeBytes = z
   .number()
@@ -52,9 +41,7 @@ const FileSizeBytes = z
   .min(1024, { message: "Minimum file size is 1KB" })
   .max(1073741824, { message: "Maximum file size is 1GB" });
 
-const Milliseconds = z
-  .int32()
-  .min(0, { message: "Timeout must be non-negative" });
+const Milliseconds = z.int32().min(0, { message: "Timeout must be non-negative" });
 
 const ServerConfigSchema = z
   .object({
@@ -70,9 +57,7 @@ const ServerConfigSchema = z
       .min(1)
       .max(10)
       .transform((val) => val.toUpperCase()),
-    domain: z
-      .string()
-      .regex(/^[a-z0-9-]+$/, "Domain must be lowercase with hyphens only"),
+    domain: z.string().regex(/^[a-z0-9-]+$/, "Domain must be lowercase with hyphens only"),
     service: z.string().min(1).max(50),
     journeyType: z.string().min(1).max(50),
   })
@@ -87,8 +72,7 @@ const BrowserConfigSchema = z
         height: PositiveInt.min(240).max(2160),
       })
       .refine((viewport) => viewport.width >= viewport.height * 0.5, {
-        message:
-          "Viewport aspect ratio should be reasonable (width >= height * 0.5)",
+        message: "Viewport aspect ratio should be reasonable (width >= height * 0.5)",
       }),
     ignoreHTTPSErrors: z.boolean(),
     screenshot: ScreenshotMode,
@@ -99,27 +83,18 @@ const BrowserConfigSchema = z
 
 const FileExtension = z
   .string()
-  .regex(
-    /^\.[a-z0-9]+$/i,
-    "Extension must start with . and contain only alphanumeric characters",
-  )
+  .regex(/^\.[a-z0-9]+$/i, "Extension must start with . and contain only alphanumeric characters")
   .transform((val) => val.toLowerCase());
 
-const MimeType = z
-  .string()
-  .regex(/^[a-z]+\/[a-z0-9.+-]+$/i, "Invalid MIME type format");
+const MimeType = z.string().regex(/^[a-z]+\/[a-z0-9.+-]+$/i, "Invalid MIME type format");
 
 const DownloadConfigSchema = z
   .object({
-    extensions: z
-      .array(FileExtension)
-      .min(1, "At least one file extension must be specified"),
+    extensions: z.array(FileExtension).min(1, "At least one file extension must be specified"),
 
     maxFileSize: FileSizeBytes,
 
-    allowedMimeTypes: z
-      .array(MimeType)
-      .min(1, "At least one MIME type must be specified"),
+    allowedMimeTypes: z.array(MimeType).min(1, "At least one MIME type must be specified"),
 
     downloadTimeout: Milliseconds.min(5000).max(300000),
     maxRetries: PositiveInt.max(10),
@@ -139,10 +114,9 @@ const DownloadConfigSchema = z
       return true;
     },
     {
-      message:
-        "When downloading sample assets, maxSampleAssets should not exceed 20",
+      message: "When downloading sample assets, maxSampleAssets should not exceed 20",
       path: ["maxSampleAssets"],
-    },
+    }
   );
 
 const ConfigSchema = z
@@ -157,22 +131,15 @@ const ConfigSchema = z
       data.browser.headless &&
       (data.browser.video === "on" || data.browser.screenshot === "on")
     ) {
-      console.warn(
-        "Warning: Video/Screenshot recording in headless mode may not work as expected",
-      );
+      console.warn("Warning: Video/Screenshot recording in headless mode may not work as expected");
     }
 
-    const paths = [
-      data.server.screenshotDir,
-      data.server.downloadsDir,
-      data.server.syntheticsDir,
-    ];
+    const paths = [data.server.screenshotDir, data.server.downloadsDir, data.server.syntheticsDir];
     const uniquePaths = new Set(paths.map((p) => path.resolve(p)));
     if (uniquePaths.size !== paths.length) {
       ctx.addIssue({
         code: "custom",
-        message:
-          "Screenshot, downloads, and synthetics directories must be different",
+        message: "Screenshot, downloads, and synthetics directories must be different",
       });
     }
   });
@@ -263,8 +230,7 @@ const enhancedAllowedDownloads = {
 
 const defaultConfig: Config = {
   server: {
-    baseUrl:
-      "https://www.prd.presskits.eu.pvh.cloud/tommyxmercedes-amgf1xclarenceruth/",
+    baseUrl: "https://www.prd.presskits.eu.pvh.cloud/tommyxmercedes-amgf1xclarenceruth/",
     screenshotDir: "./navigation-screenshots",
     downloadsDir: "./downloads",
     syntheticsDir: "./synthetics",
@@ -299,7 +265,7 @@ const defaultConfig: Config = {
   },
 };
 
-const envVarMapping = {
+const _envVarMapping = {
   server: {
     baseUrl: "BASE_URL",
     screenshotDir: "SCREENSHOT_DIR",
@@ -331,46 +297,40 @@ const envVarMapping = {
 } as const;
 
 const EnvString = z.string().trim();
-const EnvNumber = z.coerce.number();
+const _EnvNumber = z.coerce.number();
 const EnvBoolean = z.stringbool();
 
-const EnvConfigSchema = z
-  .object({
-    BASE_URL: z.url().optional(),
-    SCREENSHOT_DIR: DirectoryPath.optional(),
-    DOWNLOADS_DIR: DirectoryPath.optional(),
-    SYNTHETICS_DIR: DirectoryPath.optional(),
-    PAUSE_BETWEEN_CLICKS: z.coerce.number().int().min(0).optional(),
-    ENVIRONMENT: EnvironmentType.optional(),
-    DEPARTMENT: EnvString.optional(),
-    DEPARTMENT_SHORT: z
-      .string()
-      .trim()
-      .transform((val) => val.toUpperCase())
-      .optional(),
-    DOMAIN: EnvString.optional(),
-    SERVICE: EnvString.optional(),
-    JOURNEY_TYPE: EnvString.optional(),
-    BROWSER_HEADLESS: EnvBoolean.optional(),
-    VIEWPORT_WIDTH: z.coerce.number().int().positive().optional(),
-    VIEWPORT_HEIGHT: z.coerce.number().int().positive().optional(),
-    IGNORE_HTTPS_ERRORS: EnvBoolean.optional(),
-    SCREENSHOT_MODE: ScreenshotMode.optional(),
-    VIDEO_MODE: VideoMode.optional(),
-    TRACE_MODE: TraceMode.optional(),
-    MAX_DOWNLOAD_SIZE: z.coerce
-      .number()
-      .int()
-      .min(1024)
-      .max(1073741824)
-      .optional(),
-    MAX_IMAGES_TO_VALIDATE: z.coerce.number().int().positive().optional(),
-    MAX_VIDEOS_TO_VALIDATE: z.coerce.number().int().positive().optional(),
-    VALIDATE_ASSET_IMAGES: EnvBoolean.optional(),
-    DOWNLOAD_TIMEOUT: z.coerce.number().int().min(0).optional(),
-    MAX_RETRIES: z.coerce.number().int().positive().optional(),
-    RETRY_DELAY: z.coerce.number().int().min(0).optional(),
-  });
+const EnvConfigSchema = z.object({
+  BASE_URL: z.url().optional(),
+  SCREENSHOT_DIR: DirectoryPath.optional(),
+  DOWNLOADS_DIR: DirectoryPath.optional(),
+  SYNTHETICS_DIR: DirectoryPath.optional(),
+  PAUSE_BETWEEN_CLICKS: z.coerce.number().int().min(0).optional(),
+  ENVIRONMENT: EnvironmentType.optional(),
+  DEPARTMENT: EnvString.optional(),
+  DEPARTMENT_SHORT: z
+    .string()
+    .trim()
+    .transform((val) => val.toUpperCase())
+    .optional(),
+  DOMAIN: EnvString.optional(),
+  SERVICE: EnvString.optional(),
+  JOURNEY_TYPE: EnvString.optional(),
+  BROWSER_HEADLESS: EnvBoolean.optional(),
+  VIEWPORT_WIDTH: z.coerce.number().int().positive().optional(),
+  VIEWPORT_HEIGHT: z.coerce.number().int().positive().optional(),
+  IGNORE_HTTPS_ERRORS: EnvBoolean.optional(),
+  SCREENSHOT_MODE: ScreenshotMode.optional(),
+  VIDEO_MODE: VideoMode.optional(),
+  TRACE_MODE: TraceMode.optional(),
+  MAX_DOWNLOAD_SIZE: z.coerce.number().int().min(1024).max(1073741824).optional(),
+  MAX_IMAGES_TO_VALIDATE: z.coerce.number().int().positive().optional(),
+  MAX_VIDEOS_TO_VALIDATE: z.coerce.number().int().positive().optional(),
+  VALIDATE_ASSET_IMAGES: EnvBoolean.optional(),
+  DOWNLOAD_TIMEOUT: z.coerce.number().int().min(0).optional(),
+  MAX_RETRIES: z.coerce.number().int().positive().optional(),
+  RETRY_DELAY: z.coerce.number().int().min(0).optional(),
+});
 
 function loadConfigFromEnv(): Partial<Config> {
   const envSource = typeof Bun !== "undefined" ? Bun.env : process.env;
@@ -378,10 +338,7 @@ function loadConfigFromEnv(): Partial<Config> {
   const envResult = EnvConfigSchema.safeParse(envSource);
 
   if (!envResult.success) {
-    console.warn(
-      "Environment variable validation warnings:",
-      envResult.error.issues,
-    );
+    console.warn("Environment variable validation warnings:", envResult.error.issues);
   }
 
   const env = envResult.data || {};
@@ -494,4 +451,3 @@ export { SchemaRegistry };
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
 export type DownloadConfig = z.infer<typeof DownloadConfigSchema>;
-
