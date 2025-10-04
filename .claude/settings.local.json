@@ -22,7 +22,10 @@
       "Bash(bun x @elastic/synthetics:*)",
       "Bash(node:*)",
       "Bash(NODE_OPTIONS=\"--no-experimental-strip-types\" npx @elastic/synthetics synthetics/test.journey.ts)",
-      "Bash(bun playwright test:*)"
+      "Bash(bun playwright test:*)",
+      "Bash(bunx tsc:*)",
+      "Bash(timeout 10 bun run test:*)",
+      "Bash(bun:*)"
     ],
     "deny": [],
     "ask": []

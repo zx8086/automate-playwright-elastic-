@@ -406,9 +406,7 @@ test.describe("Site Navigation Test with Steps", () => {
                   }
                 });
               } else if (imageValidation.validImages.length > 0) {
-                console.log(
-                  `All ${imageValidation.validImages.length} images loaded successfully`
-                );
+                console.log(`All ${imageValidation.validImages.length} images loaded successfully`);
               } else {
                 console.log(`No images found on this page`);
               }

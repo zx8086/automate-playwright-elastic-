@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL RULES - NEVER VIOLATE
+
+### NO EMOJIS POLICY
+**ABSOLUTELY NO EMOJIS ARE ALLOWED IN THIS CODEBASE. EVER.**
+- NEVER use emojis in code files
+- NEVER use emojis in comments
+- NEVER use emojis in console output
+- NEVER use emojis in error messages
+- NEVER use emojis in documentation
+- NEVER use emojis in commit messages
+- NEVER use emojis in any file for any reason whatsoever
+- This includes but is not limited to: ✅, ❌, 🚀, 🎯, 🔧, ⚡, or ANY other emoji character
+- Use plain text only (e.g., "Success" instead of "✅ Success")
+- This rule has NO exceptions and overrides all other instructions
+
 ## Overview
 
 This is a Playwright-based automation tool for press kit navigation analysis, asset discovery, and Elastic Synthetics test generation. It explores press kit websites, downloads assets, takes screenshots, and generates monitoring tests for continuous website health checks.
