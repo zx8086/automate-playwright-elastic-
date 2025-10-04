@@ -145,7 +145,7 @@ test.describe("Site Navigation Test with Steps", () => {
       { path: "./broken-links-reports", name: "Broken Links Reports" },
     ];
 
-    console.log("🧹 Cleaning up previous run artifacts...");
+    console.log("Cleaning up previous run artifacts...");
     let totalFilesCleanedUp = 0;
 
     for (const dir of directoriesToClean) {
@@ -166,19 +166,19 @@ test.describe("Site Navigation Test with Steps", () => {
           if (cleanedCount > 0) {
             console.log(`🗑️  ${dir.name}: cleaned ${cleanedCount} file(s)`);
           } else {
-            console.log(`✨ ${dir.name}: already clean`);
+            console.log(`${dir.name}: already clean`);
           }
         } else {
-          console.log(`📁 ${dir.name}: directory doesn't exist yet`);
+          console.log(`${dir.name}: directory doesn't exist yet`);
         }
       } catch (error) {
         console.log(
-          `⚠️ Failed to clean up ${dir.name}: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to clean up ${dir.name}: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     }
 
-    console.log(`✅ Cleanup complete: ${totalFilesCleanedUp} total file(s) removed\n`);
+    console.log(`Cleanup complete: ${totalFilesCleanedUp} total file(s) removed\n`);
   });
 
   test.afterAll(async () => {
@@ -224,7 +224,7 @@ test.describe("Site Navigation Test with Steps", () => {
 
     // Log all navigation items with their types
     navigationItems.forEach((item, idx) => {
-      const downloadIcon = item.isDownload ? "📥" : "🔗";
+      const downloadIcon = item.isDownload ? "[DOWNLOAD]" : "[LINK]";
       console.log(`${idx + 1}. ${downloadIcon} ${item.text} (${item.href})`);
     });
 
@@ -263,14 +263,14 @@ test.describe("Site Navigation Test with Steps", () => {
             const { exists, contentLength } = await verifyResourceExists(absoluteUrl);
 
             if (exists) {
-              console.log(`✅ Resource ${item.text} exists and is accessible`);
+              console.log(`Resource ${item.text} exists and is accessible`);
 
               // Try to download the file
               const downloadPath = path.join(config.server.downloadsDir, path.basename(item.href));
 
               if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
                 console.log(
-                  `⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                  `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
                 );
                 const skippedDownload: SkippedDownload = {
                   from: startUrl,
@@ -286,7 +286,7 @@ test.describe("Site Navigation Test with Steps", () => {
                 const downloadSuccessful = await downloadFile(absoluteUrl, downloadPath);
 
                 if (downloadSuccessful) {
-                  console.log(`✅ Successfully downloaded: ${downloadPath}`);
+                  console.log(`Successfully downloaded: ${downloadPath}`);
 
                   // Get file size
                   const stats = fs.statSync(downloadPath);
@@ -306,7 +306,7 @@ test.describe("Site Navigation Test with Steps", () => {
                   // Mark this download as processed
                   processedDownloads.add(absoluteUrl);
                 } else {
-                  console.log(`⚠️ Download failed for: ${absoluteUrl}`);
+                  console.log(`Download failed for: ${absoluteUrl}`);
                   const skippedDownload: SkippedDownload = {
                     from: startUrl,
                     to: absoluteUrl,
@@ -320,11 +320,11 @@ test.describe("Site Navigation Test with Steps", () => {
                 }
               }
             } else {
-              console.log(`⚠️ Resource not accessible: ${absoluteUrl}`);
+              console.log(`Resource not accessible: ${absoluteUrl}`);
             }
           } catch (error: unknown) {
             console.log(
-              `⚠️ Error handling downloadable resource: ${error instanceof Error ? error.message : String(error)}`
+              `Error handling downloadable resource: ${error instanceof Error ? error.message : String(error)}`
             );
           }
         }
@@ -332,7 +332,7 @@ test.describe("Site Navigation Test with Steps", () => {
         else {
           try {
             // For regular pages, navigate directly to the URL instead of clicking
-            console.log(`🔗 Direct navigation to: ${absoluteUrl}`);
+            console.log(`Direct navigation to: ${absoluteUrl}`);
             await page.goto(absoluteUrl, { timeout: 30000 });
 
             // Wait for the page to load
@@ -342,7 +342,7 @@ test.describe("Site Navigation Test with Steps", () => {
             // Verify navigation was successful
             const currentUrl = page.url();
             if (currentUrl !== startUrl) {
-              console.log(`✅ Successfully navigated to: ${currentUrl}`);
+              console.log(`Successfully navigated to: ${currentUrl}`);
 
               // Get element counts for metadata
               const elementCounts = await getElementCounts(page);
@@ -378,7 +378,7 @@ test.describe("Site Navigation Test with Steps", () => {
 
               if (imageValidation.brokenImages.length > 0) {
                 console.log(
-                  `⚠️ Found ${imageValidation.brokenImages.length} broken images on "${item.text}"`
+                  `Found ${imageValidation.brokenImages.length} broken images on "${item.text}"`
                 );
 
                 // Add broken images to global tracking with detailed context
@@ -397,7 +397,7 @@ test.describe("Site Navigation Test with Steps", () => {
                   const existingLinks = globalBrokenLinks.get(pageUrl) || [];
                   existingLinks.push(brokenLink);
                   globalBrokenLinks.set(pageUrl, existingLinks);
-                  console.log(`  ❌ [${idx + 1}] ${brokenImg.src}`);
+                  console.log(`  [${idx + 1}] ${brokenImg.src}`);
                   if (brokenImg.alt) {
                     console.log(`      Alt: "${brokenImg.alt}"`);
                   }
@@ -407,10 +407,10 @@ test.describe("Site Navigation Test with Steps", () => {
                 });
               } else if (imageValidation.validImages.length > 0) {
                 console.log(
-                  `✅ All ${imageValidation.validImages.length} images loaded successfully`
+                  `All ${imageValidation.validImages.length} images loaded successfully`
                 );
               } else {
-                console.log(`📭 No images found on this page`);
+                console.log(`No images found on this page`);
               }
 
               // Process any download links found on this page
@@ -432,7 +432,7 @@ test.describe("Site Navigation Test with Steps", () => {
                     const { exists, contentLength } = await verifyResourceExists(downloadUrl);
                     if (exists) {
                       console.log(
-                        `✅ Download resource ${downloadLink.text} exists and is accessible`
+                        `Download resource ${downloadLink.text} exists and is accessible`
                       );
                       // Try to download the file
                       const downloadPath = path.join(
@@ -441,7 +441,7 @@ test.describe("Site Navigation Test with Steps", () => {
                       );
                       const downloadSuccessful = await downloadFile(downloadUrl, downloadPath);
                       if (downloadSuccessful) {
-                        console.log(`✅ Successfully downloaded from page: ${downloadPath}`);
+                        console.log(`Successfully downloaded from page: ${downloadPath}`);
                         // Get file size
                         const stats = fs.statSync(downloadPath);
                         console.log(`File size: ${formatFileSize(stats.size)}`);
@@ -458,10 +458,10 @@ test.describe("Site Navigation Test with Steps", () => {
                         // Mark this download as processed
                         processedDownloads.add(downloadUrl);
                       } else {
-                        console.log(`⚠️ Download failed for: ${downloadUrl}`);
+                        console.log(`Download failed for: ${downloadUrl}`);
                         if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
                           console.log(
-                            `⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                            `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
                           );
                           fs.existsSync(downloadPath) && fs.unlinkSync(downloadPath);
                           const skippedDownload: SkippedDownload = {
@@ -488,11 +488,11 @@ test.describe("Site Navigation Test with Steps", () => {
                         }
                       }
                     } else {
-                      console.log(`⚠️ Download resource not accessible: ${downloadUrl}`);
+                      console.log(`Download resource not accessible: ${downloadUrl}`);
                     }
                   } catch (error) {
                     console.log(
-                      `⚠️ Error handling page download: ${error instanceof Error ? error.message : String(error)}`
+                      `Error handling page download: ${error instanceof Error ? error.message : String(error)}`
                     );
                   }
                 }
@@ -503,11 +503,11 @@ test.describe("Site Navigation Test with Steps", () => {
               await page.waitForLoadState("domcontentloaded");
               await page.waitForTimeout(config.server.pauseBetweenClicks);
             } else {
-              console.log(`⚠️ Navigation to "${item.text}" didn't change URL`);
+              console.log(`Navigation to "${item.text}" didn't change URL`);
             }
           } catch (error: unknown) {
             console.log(
-              `⚠️ Error navigating to "${item.text}": ${error instanceof Error ? error.message : String(error)}`
+              `Error navigating to "${item.text}": ${error instanceof Error ? error.message : String(error)}`
             );
           }
         }
@@ -556,14 +556,14 @@ test.describe("Site Navigation Test with Steps", () => {
 
         console.log("\n- Broken Links Found:");
         console.log(
-          `  ❌ Total: ${totalBroken} broken link(s) detected out of ${globalValidatedLinksCount} tested`
+          `  Total: ${totalBroken} broken link(s) detected out of ${globalValidatedLinksCount} tested`
         );
 
         for (const [pageUrl, links] of globalBrokenLinks) {
           const pageName = pageUrl.split("/").filter(Boolean).pop() || "home";
           console.log(`  - ${pageName} page: ${links.length} broken link(s)`);
         }
-        console.log("\n  ⚠️  See broken-links-reports/ directory for detailed report");
+        console.log("\n  See broken-links-reports/ directory for detailed report");
       } else {
         console.log("\n- Link Validation:");
 
@@ -573,12 +573,12 @@ test.describe("Site Navigation Test with Steps", () => {
         const totalFound = globalTotalLinksFound + globalVideosFound + workingAssetCount;
 
         if (totalValidated > 0) {
-          console.log(`  ✅ All links are working correctly`);
+          console.log(`  All links are working correctly`);
 
           // Show total found vs validated
           if (totalFound > totalValidated) {
             console.log(
-              `  📊 Successfully validated ${totalValidated} link(s) out of ${totalFound} found:`
+              `  Successfully validated ${totalValidated} link(s) out of ${totalFound} found:`
             );
           } else {
             console.log(`  📊 Successfully validated ${totalValidated} link(s):`);
@@ -606,7 +606,7 @@ test.describe("Site Navigation Test with Steps", () => {
             console.log(`     - Downloadable files: ${workingAssetCount}`);
           }
         } else {
-          console.log("  ✅ All links are working correctly");
+          console.log("  All links are working correctly");
         }
       }
 
@@ -843,7 +843,7 @@ async function identifyNavigation(page: Page) {
   // Rest of the function remains the same...
   if (navItems.length === 0) {
     console.log(
-      "⚠️ No navigation items found with enhanced selectors, trying comprehensive fallback..."
+      " No navigation items found with enhanced selectors, trying comprehensive fallback..."
     );
 
     // Your existing fallback logic here...
@@ -880,7 +880,7 @@ async function checkPageSpecificElements(
             'img[loading="lazy"], img[data-src], img[src*="nextImageExportOptimizer"]'
           );
           if (newImages.length > 0) {
-            console.log(`📸 Found ${newImages.length} lazy images at scroll position ${scrollTo}`);
+            console.log(` Found ${newImages.length} lazy images at scroll position ${scrollTo}`);
           }
         }
 
@@ -901,7 +901,7 @@ async function checkPageSpecificElements(
 
     // Common elements to check
     const elementCounts = await getElementCounts(page);
-    console.log(`📊 Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`);
+    console.log(` Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`);
 
     // ENHANCED: More comprehensive page-specific checks
     const pageNameLower = pageName.toLowerCase();
@@ -966,7 +966,7 @@ async function checkPageSpecificElements(
         const pageBrokenLinks: BrokenLink[] = [];
 
         if (assetImages.brokenImages.length > 0) {
-          console.log(`\n❌ Found ${assetImages.brokenImages.length} broken links:`);
+          console.log(`\nFound ${assetImages.brokenImages.length} broken links:`);
           assetImages.brokenImages.forEach((img, index) => {
             console.log(`   ${index + 1}. ${img.src}`);
             if (img.statusCode) {
@@ -998,13 +998,13 @@ async function checkPageSpecificElements(
             validCount: assetImages.validImages.length,
           };
 
-          console.log(`\n📊 Link validation summary for ${pageName}:`);
+          console.log(`\nLink validation summary for ${pageName}:`);
           console.log(`   Total links checked: ${brokenReport.totalImages}`);
-          console.log(`   ✅ Valid: ${brokenReport.validCount}`);
-          console.log(`   ❌ BROKEN: ${brokenReport.brokenCount}`);
+          console.log(`   Valid: ${brokenReport.validCount}`);
+          console.log(`   BROKEN: ${brokenReport.brokenCount}`);
         } else if (assetImages.validImages.length > 0) {
           console.log(
-            `✅ All ${assetImages.validImages.length} asset images are valid and accessible`
+            `All ${assetImages.validImages.length} asset images are valid and accessible`
           );
         }
 
@@ -1054,7 +1054,7 @@ async function checkPageSpecificElements(
     });
 
     if (hasMissingElements.length > 0) {
-      console.log(`⚠️ Missing critical elements: ${hasMissingElements.join(", ")}`);
+      console.log(`Missing critical elements: ${hasMissingElements.join(", ")}`);
     }
 
     // **NEW: SCAN FOR DOWNLOAD LINKS ON THIS PAGE**
@@ -1147,7 +1147,7 @@ async function createVisualSitemap(
           .map(
             (download) => `
           <div class="download">
-            📄 ${download.label} - ${formatFileSize(download.fileSize || 0)}
+            ${download.label} - ${formatFileSize(download.fileSize || 0)}
             <br>
             <a href="${download.to}" target="_blank">${download.to}</a>
           </div>
@@ -1293,7 +1293,7 @@ journey('${monitorName}', async ({ page }) => {
         const networkIdleTimeout = Math.min(Math.max(options.networkIdleTimeout || 1000, 500), 10000);
 
         const startTime = Date.now();
-        console.log(\`🔄 Enhanced page load starting for \${pageType}...\`);
+        console.log(\` Enhanced page load starting for \${pageType}...\`);
 
         try {
             // STEP 1: Essential DOM loading (CRITICAL)
@@ -1301,7 +1301,7 @@ journey('${monitorName}', async ({ page }) => {
                 page.waitForLoadState('domcontentloaded', { timeout: 5000 }),
                 page.waitForTimeout(5000)
             ]);
-            console.log(\`✅ DOM ready: \${Date.now() - startTime}ms\`);
+            console.log(\` DOM ready: \${Date.now() - startTime}ms\`);
 
             // STEP 2: Wait for body visibility and content (PREVENTS BLANK SCREENSHOTS)
             await Promise.race([
@@ -1328,7 +1328,7 @@ journey('${monitorName}', async ({ page }) => {
                 if (!hasContent) {
                     retryCount++;
                     if (retryCount < maxRetries) {
-                        console.log(\`⚠️ Content check attempt \${retryCount} failed, retrying...\`);
+                        console.log(\` Content check attempt \${retryCount} failed, retrying...\`);
                         await page.waitForTimeout(1000); // Wait before retry
                     }
                 }
@@ -1342,7 +1342,7 @@ journey('${monitorName}', async ({ page }) => {
                 });
 
                 if (isBackNavigation) {
-                    console.log('⚠️ Back navigation detected, proceeding with reduced content check');
+                    console.log(' Back navigation detected, proceeding with reduced content check');
                     // For back navigation, we'll proceed even with minimal content
                     hasContent = true;
                 } else {
@@ -1350,18 +1350,18 @@ journey('${monitorName}', async ({ page }) => {
                 }
             }
 
-            console.log(\`✅ Body visible with content: \${Date.now() - startTime}ms\`);
+            console.log(\` Body visible with content: \${Date.now() - startTime}ms\`);
 
             // STEP 3: CRITICAL IMAGE LOADING (OPTIMIZED)
             const imagesLoaded = await waitForCriticalImages(imageTimeout);
             if (!imagesLoaded) {
-                console.log('⚠️ Some images may not be fully loaded');
+                console.log(' Some images may not be fully loaded');
             }
 
             // STEP 4: Navigation elements (OPTIMIZED)
             const navigationLoaded = await waitForNavigation();
             if (!navigationLoaded) {
-                console.log('⚠️ Navigation elements may not be fully loaded');
+                console.log(' Navigation elements may not be fully loaded');
             }
 
             // STEP 5: Network stability check (OPTIMIZED)
@@ -1370,9 +1370,9 @@ journey('${monitorName}', async ({ page }) => {
                     page.waitForLoadState('networkidle', { timeout: networkIdleTimeout }),
                     page.waitForTimeout(networkIdleTimeout)
                 ]);
-                console.log(\`✅ Network stable: \${Date.now() - startTime}ms\`);
+                console.log(\` Network stable: \${Date.now() - startTime}ms\`);
             } catch (e) {
-                console.log('⚠️ Network still active, continuing...');
+                console.log(' Network still active, continuing...');
             }
 
             // STEP 6: Final page load verification
@@ -1458,9 +1458,9 @@ journey('${monitorName}', async ({ page }) => {
 
             // Log performance metrics (basic validation)
             if (pageLoadStatus.performanceMetrics) {
-                console.log('✅ Performance metrics collected successfully');
+                console.log(' Performance metrics collected successfully');
             } else {
-                console.log('⚠️ Performance metrics not available');
+                console.log(' Performance metrics not available');
             }
 
             if (!pageLoadStatus.isInteractive) {
@@ -1468,11 +1468,11 @@ journey('${monitorName}', async ({ page }) => {
             }
 
             if (pageLoadStatus.isLoading) {
-                console.log('⚠️ Page still shows loading indicators');
+                console.log(' Page still shows loading indicators');
             }
 
             if (pageLoadStatus.hasErrors) {
-                console.log('⚠️ Page contains error messages:');
+                console.log(' Page contains error messages:');
                 pageLoadStatus.errorDetails.forEach(error => {
                     console.log(\`   - \${error.text} (\${error.type})\`);
                 });
@@ -1481,11 +1481,11 @@ journey('${monitorName}', async ({ page }) => {
             // STEP 7: Final render wait (REDUCED)
             await page.waitForTimeout(500);
 
-            console.log(\`🎉 Total load time: \${Date.now() - startTime}ms\`);
+            console.log(\` Total load time: \${Date.now() - startTime}ms\`);
             return true;
 
         } catch (error) {
-            console.log(\`❌ Page load error: \${error.message}\`);
+            console.log(\` Page load error: \${error.message}\`);
             return false;
         }
     };
@@ -1497,10 +1497,10 @@ journey('${monitorName}', async ({ page }) => {
         try {
             // Wait for images to appear in DOM
             const imageCount = await page.locator('img').count();
-            console.log(\`📸 Found \${imageCount} images\`);
+            console.log(\`Found \${imageCount} images\`);
 
             if (imageCount === 0) {
-                console.log('📸 No images to load');
+                console.log(' No images to load');
                 return true;
             }
 
@@ -1559,7 +1559,7 @@ journey('${monitorName}', async ({ page }) => {
 
                 // Strategy 2: Timeout fallback
                 page.waitForTimeout(timeout).then(() => {
-                    console.log('📸 Image loading timeout reached');
+                    console.log(' Image loading timeout reached');
                     return true;
                 })
             ]);
@@ -1587,14 +1587,14 @@ journey('${monitorName}', async ({ page }) => {
             const visibleImages = imageStatus.filter(img => img.visible);
             const loadedVisibleImages = visibleImages.filter(img => img.complete);
 
-            console.log(\`📸 Image loading status:\`);
+            console.log(\`Image loading status:\`);
             console.log(\`   - Total images: \${imageCount}\`);
             console.log(\`   - Valid images: \${validImages.length}/\${imageCount}\`);
             console.log(\`   - Visible images: \${visibleImages.length}/\${imageCount}\`);
             console.log(\`   - Loaded visible images: \${loadedVisibleImages.length}/\${visibleImages.length}\`);
 
             if (loadedVisibleImages.length < visibleImages.length) {
-                console.log('📸 Some visible images failed to load:');
+                console.log(' Some visible images failed to load:');
                 visibleImages
                     .filter(img => !img.complete)
                     .forEach(img => {
@@ -1603,11 +1603,11 @@ journey('${monitorName}', async ({ page }) => {
                     });
             }
 
-            console.log(\`📸 Images processed in \${Date.now() - startTime}ms\`);
+            console.log(\`Images processed in \${Date.now() - startTime}ms\`);
             return validImages.length > 0;
 
         } catch (error) {
-            console.log(\`📸 Image loading error: \${error.message}\`);
+            console.log(\`Image loading error: \${error.message}\`);
             return false;
         }
     };
@@ -1631,16 +1631,16 @@ journey('${monitorName}', async ({ page }) => {
                         page.waitForSelector(selector, { state: 'visible', timeout: 3000 }),
                         page.waitForTimeout(3000)
                     ]);
-                    console.log(\`🔗 Navigation loaded: \${selector}\`);
+                    console.log(\` Navigation loaded: \${selector}\`);
                     return true;
                 }
             }
 
-            console.log('🔗 No navigation elements found');
+            console.log(' No navigation elements found');
             return false;
 
         } catch (e) {
-            console.log('🔗 Navigation loading timeout');
+            console.log(' Navigation loading timeout');
             return false;
         }
     };
@@ -1676,7 +1676,7 @@ journey('${monitorName}', async ({ page }) => {
     // Enhanced step wrapper with error handling
     const enhancedStep = async (stepName: string, pageType: string, action: () => Promise<void>) => {
         const startTime = Date.now();
-        console.log(\`🚀 Starting: \${stepName}\`);
+        console.log(\` Starting: \${stepName}\`);
 
         try {
             // Execute the action
@@ -1687,17 +1687,17 @@ journey('${monitorName}', async ({ page }) => {
             const success = await waitForFullPageLoad(pageType, config);
 
             if (success) {
-                console.log(\`✅ \${stepName} completed in \${Date.now() - startTime}ms\`);
+                console.log(\` \${stepName} completed in \${Date.now() - startTime}ms\`);
             } else {
-                console.log(\`⚠️ \${stepName} completed with warnings in \${Date.now() - startTime}ms\`);
+                console.log(\` \${stepName} completed with warnings in \${Date.now() - startTime}ms\`);
             }
 
         } catch (error) {
-            console.log(\`❌ \${stepName} failed: \${error.message}\`);
+            console.log(\` \${stepName} failed: \${error.message}\`);
 
             // Don't fail the entire journey for navigation issues
             if (error.message.includes('timeout') || error.message.includes('navigation')) {
-                console.log(\`⚠️ Continuing journey despite \${stepName} failure\`);
+                console.log(\` Continuing journey despite \${stepName} failure\`);
             } else {
                 throw error;
             }
@@ -1757,11 +1757,11 @@ journey('${monitorName}', async ({ page }) => {
                         if (count > 0) {
                             await element.click();
                             clicked = true;
-                            console.log(\`✅ Clicked using selector: \${selector}\`);
+                            console.log(\` Clicked using selector: \${selector}\`);
                             break;
                         }
                     } catch (e) {
-                        console.log(\`⚠️ Selector failed: \${selector} - \${e.message}\`);
+                        console.log(\` Selector failed: \${selector} - \${e.message}\`);
                         continue;
                     }
                 }
@@ -1771,7 +1771,7 @@ journey('${monitorName}', async ({ page }) => {
                 }
 
             } catch (e) {
-                console.log('🔄 Falling back to direct navigation for ${escapedLabel}');
+                console.log(' Falling back to direct navigation for ${escapedLabel}');
                 await page.goto('${page.url}', {
                     waitUntil: 'domcontentloaded',
                     timeout: 20000
@@ -1821,18 +1821,18 @@ journey('${monitorName}', async ({ page }) => {
         });
 
         if (imageValidation.broken.length > 0) {
-            console.log(\`⚠️ Found \${imageValidation.broken.length} broken images on "${escapedLabel}":\`);
+            console.log(\`Found \${imageValidation.broken.length} broken images on "${escapedLabel}":\`);
             imageValidation.broken.forEach((img, idx) => {
-                console.log(\`  ❌ [\${idx + 1}] \${img.src}\`);
+                console.log(\` [\${idx + 1}] \${img.src}\`);
                 if (img.alt) {
                     console.log(\`      Alt: "\${img.alt}"\`);
                 }
                 console.log(\`      Status: naturalWidth=\${img.naturalWidth}, complete=\${img.complete}\`);
             });
         } else if (imageValidation.total > 0) {
-            console.log(\`✅ All \${imageValidation.valid.length} images loaded successfully on "${escapedLabel}"\`);
+            console.log(\` All \${imageValidation.valid.length} images loaded successfully on "${escapedLabel}"\`);
         } else {
-            console.log(\`📭 No images found on "${escapedLabel}"\`);
+            console.log(\`No images found on "${escapedLabel}"\`);
         }
     });
 
@@ -1840,9 +1840,9 @@ journey('${monitorName}', async ({ page }) => {
         await enhancedStep('Return to previous page', 'homepage', async () => {
             try {
                 await page.goBack({ waitUntil: 'domcontentloaded', timeout: 10000 });
-                console.log('✅ Browser back navigation successful');
+                console.log(' Browser back navigation successful');
             } catch (e) {
-                console.log('🔄 Back navigation failed, using direct navigation');
+                console.log(' Back navigation failed, using direct navigation');
                 await page.goto(baseUrl, {
                     waitUntil: 'domcontentloaded',
                     timeout: 15000
@@ -1859,13 +1859,13 @@ journey('${monitorName}', async ({ page }) => {
             // Ensure we're back on the homepage
             const currentUrl = page.url();
             if (!currentUrl.includes(baseUrl)) {
-                console.log('🔄 Navigating back to homepage for final verification');
+                console.log(' Navigating back to homepage for final verification');
                 await page.goto(baseUrl, {
                     waitUntil: 'domcontentloaded',
                     timeout: 15000
                 });
             } else {
-                console.log('✅ Already on homepage');
+                console.log(' Already on homepage');
             }
         });
     });
@@ -1891,7 +1891,7 @@ function isDownloadableResource(url: string): boolean {
     console.log(`🔍 Checking URL: ${url}`);
     console.log(`   Extension: ${extension}`);
     console.log(`   Assets page detected - treating as regular page, not download`);
-    console.log(`   Final result: ❌ NOT DOWNLOADABLE`);
+    console.log(`   Final result: NOT DOWNLOADABLE`);
     return false;
   }
 
@@ -1985,7 +1985,7 @@ function isDownloadableResource(url: string): boolean {
   console.log(`   Is download link: ${isDownloadLink}`);
 
   const isDownloadable = hasDownloadExtension || hasDownloadKeyword || isDownloadLink;
-  console.log(`   Final result: ${isDownloadable ? "✅ DOWNLOADABLE" : "❌ NOT DOWNLOADABLE"}`);
+  console.log(`   Final result: ${isDownloadable ? "DOWNLOADABLE" : "NOT DOWNLOADABLE"}`);
 
   return isDownloadable;
 }
@@ -2066,7 +2066,7 @@ async function validateAssetImages(page: Page): Promise<{
     const validInBrowser = imagesData.filter((img) => !img.isBroken && img.src);
 
     if (browserBrokenImages.length > 0) {
-      console.log(`   ❌ Browser detected ${browserBrokenImages.length} broken images`);
+      console.log(`   Browser detected ${browserBrokenImages.length} broken images`);
       browserBrokenImages.forEach((img) => {
         results.brokenImages.push({
           src: img.src,
@@ -2111,7 +2111,7 @@ async function validateAssetImages(page: Page): Promise<{
           });
         }
       } catch (_error) {
-        console.log(`   ⚠️ Could not validate: ${img.src}`);
+        console.log(`   Could not validate: ${img.src}`);
       }
     }
 
@@ -2190,7 +2190,7 @@ async function validateAssetImages(page: Page): Promise<{
     }
   } catch (error) {
     console.log(
-      `⚠️ Error validating asset images: ${error instanceof Error ? error.message : String(error)}`
+      `Error validating asset images: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 
@@ -2262,14 +2262,14 @@ async function verifyResourceExists(
           req.destroy();
 
           if (!silent) {
-            console.log(`   Result: ${isSuccess ? "✅ EXISTS" : "❌ NOT FOUND"}`);
+            console.log(`   Result: ${isSuccess ? "EXISTS" : "NOT FOUND"}`);
           }
           resolve({ exists: isSuccess, contentLength, statusCode });
         });
 
         req.on("error", (error) => {
           if (!silent) {
-            console.log(`❌ Resource verification error: ${error.message}`);
+            console.log(`Resource verification error: ${error.message}`);
           }
           resolve({ exists: false, error: error.message });
         });
@@ -2299,7 +2299,7 @@ async function verifyResourceExists(
       }
     } catch (error) {
       if (!silent) {
-        console.log(`❌ Resource verification exception: ${error}`);
+        console.log(`Resource verification exception: ${error}`);
       }
       currentRetry++;
       if (currentRetry < maxRetries) {
@@ -2313,7 +2313,7 @@ async function verifyResourceExists(
   }
 
   if (!silent) {
-    console.log(`❌ All ${maxRetries} verification attempts failed for: ${url}`);
+    console.log(`All ${maxRetries} verification attempts failed for: ${url}`);
   }
   return { exists: false, error: "All verification attempts failed" };
 }
@@ -2371,7 +2371,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
           if (statusCode >= 200 && statusCode < 300) {
             // Check content type
             const contentType = response.headers["content-type"] || "";
-            console.log(`📄 Content-Type: ${contentType}`);
+            console.log(`Content-Type: ${contentType}`);
 
             // Check content length
             const contentLength = Number.parseInt(response.headers["content-length"] || "0", 10);
@@ -2379,7 +2379,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
 
             if (contentLength > config.allowedDownloads.maxFileSize) {
               console.log(
-                `⚠️ File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
               );
               file.close();
               fs.existsSync(destination) && fs.unlinkSync(destination);
@@ -2394,7 +2394,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
             response.on("data", (chunk) => {
               downloadedSize += chunk.length;
               if (downloadedSize > config.allowedDownloads.maxFileSize) {
-                console.log(`⚠️ Download cancelled: File size exceeded during download`);
+                console.log(`Download cancelled: File size exceeded during download`);
                 req.destroy();
                 file.close();
                 fs.existsSync(destination) && fs.unlinkSync(destination);
@@ -2416,14 +2416,14 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
                 const stats = fs.statSync(destination);
                 if (stats.size > 0) {
                   console.log(
-                    `✅ Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`
+                    `Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`
                   );
                   if (!isResolved) {
                     isResolved = true;
                     resolve(true);
                   }
                 } else {
-                  console.log(`❌ Downloaded file is empty: ${destination}`);
+                  console.log(`Downloaded file is empty: ${destination}`);
                   fs.unlinkSync(destination);
                   if (!isResolved) {
                     isResolved = true;
@@ -2431,7 +2431,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
                   }
                 }
               } else {
-                console.log(`❌ Downloaded file not found: ${destination}`);
+                console.log(`Downloaded file not found: ${destination}`);
                 if (!isResolved) {
                   isResolved = true;
                   resolve(false);
@@ -2440,7 +2440,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
             });
 
             file.on("error", (error) => {
-              console.log(`❌ File write error: ${error.message}`);
+              console.log(`File write error: ${error.message}`);
               file.close();
               fs.existsSync(destination) && fs.unlinkSync(destination);
               if (!isResolved) {
@@ -2451,7 +2451,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
           } else {
             file.close();
             fs.existsSync(destination) && fs.unlinkSync(destination);
-            console.log(`❌ Download failed: HTTP ${statusCode}`);
+            console.log(`Download failed: HTTP ${statusCode}`);
             if (!isResolved) {
               isResolved = true;
               resolve(false);
@@ -2462,7 +2462,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
         req.on("error", (error) => {
           file.close();
           fs.existsSync(destination) && fs.unlinkSync(destination);
-          console.log(`❌ Download request error: ${error.message}`);
+          console.log(`Download request error: ${error.message}`);
           if (!isResolved) {
             isResolved = true;
             resolve(false);
@@ -2492,7 +2492,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     } catch (error) {
-      console.log(`❌ Download exception: ${error}`);
+      console.log(`Download exception: ${error}`);
       currentRetry++;
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
@@ -2502,7 +2502,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
     }
   }
 
-  console.log(`❌ All ${maxRetries} download attempts failed for: ${url}`);
+  console.log(`All ${maxRetries} download attempts failed for: ${url}`);
   return false;
 }
 
@@ -2520,7 +2520,7 @@ function formatFileSize(bytes: number): string {
 // Generate comprehensive broken links report
 async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>) {
   if (brokenLinks.size === 0) {
-    console.log("\n✅ No broken links found during validation!");
+    console.log("\nNo broken links found during validation!");
     return;
   }
 
@@ -2624,7 +2624,7 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
 
   // Console output with clear summary
   console.log(`\n${"=".repeat(80)}`);
-  console.log("📊 BROKEN LINKS REPORT GENERATED");
+  console.log("BROKEN LINKS REPORT GENERATED");
   console.log("=".repeat(80));
   console.log(`\n🔴 Total Broken Links Found: ${totalBrokenLinks}`);
   console.log(`\n📍 Pages with Issues (${report.summary.pagesWithBrokenLinks}):\n`);
@@ -2644,7 +2644,7 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
   }
 
   console.log(`\n${"=".repeat(80)}`);
-  console.log("📁 Reports saved to:");
+  console.log("Reports saved to:");
   console.log(`   JSON: ${jsonPath}`);
   console.log(`   Markdown: ${mdPath}`);
   console.log(`   Latest: ${latestJsonPath}`);
