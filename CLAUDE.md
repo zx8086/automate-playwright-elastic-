@@ -53,10 +53,11 @@ bun update
 - **src/playwright.spec.ts**: Main test file containing navigation logic
   - `identifyNavigation()`: Discovers navigation links using multiple selector strategies
   - `waitForPageLoad()`: Ensures pages are fully loaded before interaction
-  - `collectElementCounts()`: Analyzes page content
+  - `validateAssetImages()`: Detects broken images using browser-based and HTTP validation
   - `downloadFile()`: Handles asset downloads with validation
   - `navigateToLinkPages()`: Main navigation orchestrator
-  - `generateElasticSyntheticsTest()`: Creates monitoring tests
+  - `generateElasticSyntheticsTest()`: Creates monitoring tests with image validation
+  - `generateBrokenLinksReport()`: Creates detailed reports of broken images and assets
 
 ### Navigation Flow
 1. Identifies navigation elements using press-kit specific selectors
@@ -66,10 +67,13 @@ bun update
 5. Generates Elastic Synthetics tests from navigation data
 
 ### Key Features
+- **Broken Image Detection**: Browser-based validation using naturalWidth/Height and complete properties
 - **Duplicate Prevention**: Tracks visited URLs and downloaded files to avoid redundancy
 - **Smart Asset Detection**: Identifies downloadable links by extension, MIME type, and URL patterns
 - **Error Recovery**: Implements retry logic for downloads and navigation
 - **Performance Monitoring**: Tracks memory usage and page load metrics
+- **Comprehensive Validation**: Dual-layer image validation (browser + HTTP)
+- **Lazy Loading Support**: Detects and validates lazy-loaded images
 
 ## Directory Structure
 ```
@@ -78,6 +82,9 @@ downloads/              # Downloaded press kit assets
 synthetics/            # Generated Elastic Synthetics tests
   ├── synthetics-data.json
   └── core.journey.ts
+broken-links-reports/   # Broken image and asset reports
+  ├── broken-links-<timestamp>.json
+  └── broken-links-<timestamp>.md
 ```
 
 ## Environment Configuration
@@ -111,6 +118,8 @@ Generates TypeScript tests with:
 - Fallback mechanisms for failed clicks
 - Environment-based tagging
 - Monitoring configuration (schedule, screenshots, throttling)
+- Comprehensive image validation steps
+- Broken image detection and reporting
 
 ## Common Development Tasks
 
@@ -138,9 +147,32 @@ allowedMimeTypes: ["application/custom"]
 3. Verify page load with `DEBUG=pw:api bun run test`
 4. Check screenshots in `navigation-screenshots/` directory
 
+### Debugging Broken Images
+1. Check console output for "❌ Browser detected X broken images"
+2. Review broken-links-reports/ for detailed analysis
+3. Verify image loading with naturalWidth/Height properties
+4. Check for lazy-loaded images that may need additional wait time
+
 ## Performance Considerations
 - Memory usage is tracked throughout execution
 - Page load waits for images and network idle state
 - Downloads use streaming to handle large files
 - Duplicate prevention reduces unnecessary operations
 - Browser context is reused to minimize resource usage
+- Image validation uses configurable limits (default: 200 images per page)
+- Dual validation approach balances accuracy with performance
+
+## Recent Enhancements
+
+### Broken Image Detection (v2.0)
+- **Browser-based validation**: Uses naturalWidth, naturalHeight, and complete properties
+- **Picture element support**: Detects images in `<picture>` elements
+- **Lazy loading support**: Waits for lazy-loaded images to initialize
+- **Detailed reporting**: Provides alt text, parent context, and error details
+- **Site-agnostic**: Works on any website, not limited to press kits
+- **HTTP fallback**: Optional HTTP validation for cached images
+
+### Zod v4 Integration
+- Type-safe configuration validation
+- Improved error messages
+- Better performance with optimized parsing

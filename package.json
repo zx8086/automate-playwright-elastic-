@@ -7,18 +7,26 @@
     "synthetics": "npx @elastic/synthetics synthetics/core.journey.ts",
     "synthetics:all": "npx @elastic/synthetics synthetics/",
     "synthetics:push": "npx @elastic/synthetics push synthetics/core.journey.ts",
-    "generate-and-test": "bun run test && bun run synthetics"
+    "generate-and-test": "bun run test && bun run synthetics",
+    "typecheck": "tsc --noEmit",
+    "biome:lint": "biome lint .",
+    "biome:lint:fix": "biome lint --write .",
+    "biome:format": "biome format .",
+    "biome:format:write": "biome format --write .",
+    "biome:check": "biome check .",
+    "biome:check:write": "biome check --write .",
+    "biome:check:unsafe": "biome check --write --unsafe .",
+    "biome:ci": "biome ci ."
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.2.5",
     "@playwright/test": "^1.55.1",
-    "@types/bun": "1.2.23"
-  },
-  "peerDependencies": {
+    "@types/bun": "1.2.23",
+    "dotenv": "^17.2.3",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@elastic/synthetics": "^1.19.0",
-    "dotenv": "^17.2.3",
     "playwright": "^1.55.1",
     "zod": "^4.1.11"
   }

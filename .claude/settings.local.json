@@ -13,7 +13,8 @@
       "Bash(env BASE_URL=\"https://presskit.tommy.com/FA25TommyJeans/model/eniola/\" bun run test --timeout=60000)",
       "Bash(env BASE_URL=\"https://presskit.tommy.com/FA25TommyJeans/\" bun run test --timeout=120000)",
       "Bash(env BASE_URL=\"https://presskit.tommy.com/FA25TommyJeans/model/eniola/\" BROWSER_HEADLESS=true bun run test --timeout=30000)",
-      "Bash(timeout 30 bun run test:*)"
+      "Bash(timeout 30 bun run test:*)",
+      "Bash(bun pm ls:*)"
     ],
     "deny": [],
     "ask": []

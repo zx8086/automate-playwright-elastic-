@@ -10,14 +10,16 @@ A comprehensive Playwright-based automation tool for press kit navigation analys
 
 ## Features
 
+- **Broken Image Detection**: Advanced browser-based validation that detects failed image loads on any website
 - **Intelligent Press Kit Navigation**: Discovers and navigates through all press kit links with enhanced detection
 - **Smart Asset Discovery & Download**: Identifies and downloads press kit assets (PDFs, images, videos, etc.)
 - **Duplicate Prevention**: Prevents processing the same URLs and downloads multiple times
 - **Screenshot Capture**: Takes screenshots of each page for visual documentation
-- **Elastic Synthetics Integration**: Automatically generates monitoring tests for Elastic Observability
+- **Elastic Synthetics Integration**: Automatically generates monitoring tests with image validation
 - **Configurable & Environment-aware**: Supports multiple environments with flexible configuration
 - **Visual Sitemap Generation**: Creates HTML sitemaps showing press kit structure
-- **Comprehensive Reporting**: Detailed navigation summaries with file sizes and element analysis
+- **Comprehensive Reporting**: Detailed navigation summaries with broken image reports
+- **Lazy Loading Support**: Handles modern websites with lazy-loaded and dynamically loaded content
 
 ## Table of Contents
 
@@ -27,6 +29,7 @@ A comprehensive Playwright-based automation tool for press kit navigation analys
 - [Project Structure](#project-structure)
 - [Environment Variables](#environment-variables)
 - [Output Files](#output-files)
+- [Broken Image Detection](#broken-image-detection)
 - [Elastic Synthetics Integration](#elastic-synthetics-integration)
 - [Supported File Types](#supported-file-types)
 - [Development](#development)
@@ -134,8 +137,8 @@ ENVIRONMENT=development BASE_URL=https://dev.example.com bun run  test
 ```
 automate-playwright-elastic/
 ├── src/
-│   └── playwright.spec.ts          # Main test suite
-├── config.ts                       # Configuration management
+│   └── playwright.spec.ts          # Main test suite with image validation
+├── config.ts                       # Configuration management with Zod v4
 ├── global-setup.ts                 # Global test setup
 ├── playwright.config.ts            # Playwright configuration
 ├── .env.example                    # Environment template
@@ -143,7 +146,8 @@ automate-playwright-elastic/
 ├── tsconfig.json                   # TypeScript configuration
 ├── navigation-screenshots/         # Generated screenshots
 ├── downloads/                      # Downloaded assets
-└── synthetics/                     # Elastic Synthetics outputs
+├── synthetics/                     # Elastic Synthetics outputs
+└── broken-links-reports/           # Broken image and asset reports
 ```
 
 ## Environment Variables
@@ -211,6 +215,49 @@ The automation generates several types of output files:
 - **Content**: Interactive HTML page showing site structure
 - **Features**: Screenshots, element counts, download links
 
+### Broken Links Reports
+- **Location**: `broken-links-reports/` directory
+- **JSON Format**: `broken-links-<timestamp>.json` - Structured data for processing
+- **Markdown Format**: `broken-links-<timestamp>.md` - Human-readable report
+- **Content**: Detailed information about broken images and assets
+- **Details**: URL, alt text, error messages, HTTP status codes
+
+## Broken Image Detection
+
+The tool includes advanced broken image detection capabilities that work on any website:
+
+### Detection Methods
+
+1. **Browser-based Validation**
+   - Checks `naturalWidth` and `naturalHeight` properties (0 = failed load)
+   - Verifies the `complete` property status
+   - Detects images that fail to render despite successful HTTP responses
+
+2. **Picture Element Support**
+   - Handles modern `<picture>` elements with multiple sources
+   - Validates responsive images with srcset attributes
+
+3. **Lazy Loading Support**
+   - Waits for lazy-loaded images to initialize
+   - Detects dynamically loaded images via JavaScript
+
+4. **Comprehensive Reporting**
+   - Alt text for context
+   - Parent element information
+   - Detailed error messages
+   - HTTP status codes when available
+
+### Example Output
+
+```
+🔍 Validating images on "Model Page"...
+   Found 14 images on page
+   ❌ Browser detected 1 broken images
+   ❌ [1] https://example.com/models/image.gif
+      Alt: "Model Name"
+      Error: Failed to load in browser (naturalWidth=0, complete=true)
+```
+
 ## Elastic Synthetics Integration
 
 The project automatically generates monitoring tests compatible with Elastic Synthetics:
@@ -234,7 +281,12 @@ journey('Department - Journey Type | site (core) - env', async ({ page }) => {
         tags: ['environment', 'department', 'domain', 'service', 'site'],
     });
 
-    // Navigation steps...
+    // Navigation steps with image validation
+    step('Validate images on page', async () => {
+        const imageValidation = await page.evaluate(() => {
+            // Browser-based image validation
+        });
+    });
 });
 ```
 
@@ -320,6 +372,22 @@ allowedDownloads: {
 
 ### Common Issues
 
+#### Broken Images Not Detected
+**Problem**: Images appear broken but are not detected
+**Solution**:
+- Check if images are lazy-loaded (may need additional wait time)
+- Verify images are in `<img>` or `<picture>` tags
+- Check browser console for CORS errors
+- Ensure images have finished loading before validation
+
+#### False Positive Broken Images
+**Problem**: Valid images reported as broken
+**Solution**:
+- May be CORS restricted (browser can't validate cross-origin)
+- Check if images require authentication
+- Verify network connectivity to image servers
+- Some CDNs block automated requests
+
 #### Navigation Not Found
 **Problem**: "No navigation items found"
 **Solution**:
@@ -386,6 +454,24 @@ SCREENSHOT_MODE=only-on-failure bun run test
 # Skip video recording
 VIDEO_MODE=off bun run test
 ```
+
+## Recent Updates
+
+### Version 2.0 - Enhanced Broken Image Detection
+- Browser-based image validation using naturalWidth/Height properties
+- Support for picture elements and lazy-loaded images
+- Detailed error reporting with context information
+- Site-agnostic implementation works on any website
+
+### Version 1.9 - Zod v4 Integration
+- Upgraded to Zod v4 for improved type safety
+- Enhanced configuration validation
+- Better error messages and performance
+
+### Version 1.8 - Elastic Synthetics Scripts
+- Added test generation scripts
+- Fixed video detection capabilities
+- Enhanced monitoring configuration
 
 ## Contributing
 
