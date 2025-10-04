@@ -10,16 +10,16 @@
     "generate-and-test": "bun run test && bun run synthetics"
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0",
-    "@types/bun": "latest"
+    "@playwright/test": "^1.55.1",
+    "@types/bun": "1.2.23"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@elastic/synthetics": "^1.18.1",
-    "dotenv": "^16.4.5",
-    "playwright": "^1.52.0",
-    "zod": "^4.0.17"
+    "@elastic/synthetics": "^1.19.0",
+    "dotenv": "^17.2.3",
+    "playwright": "^1.55.1",
+    "zod": "^4.1.11"
   }
 }

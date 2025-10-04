@@ -401,6 +401,40 @@ test.describe("Site Navigation Test with Steps", () => {
                 item.text,
               );
 
+              // Validate images on ALL pages (generic for any site)
+              console.log(`\n🔍 Validating images on "${item.text}" page...`);
+              const imageValidation = await validateAssetImages(page);
+
+              if (imageValidation.brokenImages.length > 0) {
+                console.log(`⚠️ Found ${imageValidation.brokenImages.length} broken images on "${item.text}"`);
+
+                // Add broken images to global tracking with detailed context
+                const pageUrl = page.url();
+                imageValidation.brokenImages.forEach((brokenImg, idx) => {
+                  const brokenLink: BrokenLink = {
+                    pageUrl,
+                    brokenUrl: brokenImg.src,
+                    context: brokenImg.alt || "Image",
+                    error: brokenImg.error || `Status: ${brokenImg.statusCode}`,
+                  };
+                  // Add to global broken links map
+                  const existingLinks = globalBrokenLinks.get(pageUrl) || [];
+                  existingLinks.push(brokenLink);
+                  globalBrokenLinks.set(pageUrl, existingLinks);
+                  console.log(`  ❌ [${idx + 1}] ${brokenImg.src}`);
+                  if (brokenImg.alt) {
+                    console.log(`      Alt: "${brokenImg.alt}"`);
+                  }
+                  if (brokenImg.error) {
+                    console.log(`      Error: ${brokenImg.error}`);
+                  }
+                });
+              } else if (imageValidation.validImages.length > 0) {
+                console.log(`✅ All ${imageValidation.validImages.length} images loaded successfully`);
+              } else {
+                console.log(`📭 No images found on this page`);
+              }
+
               // Process any download links found on this page
               if (pageDownloadLinks && pageDownloadLinks.length > 0) {
                 for (const downloadLink of pageDownloadLinks) {
@@ -996,9 +1030,10 @@ async function checkPageSpecificElements(
         .count();
       console.log(`   - High-res/optimized images: ${hiResImages}`);
 
-      // NEW: Validate individual asset images on asset pages if enabled
-      if (config.allowedDownloads.validateAssetImages) {
-        console.log(`\n🔍 Validating individual asset images...`);
+      // Image validation is now done for ALL pages in the main navigation loop
+      // Skip duplicate validation here since it's already done above
+      if (config.allowedDownloads.validateAssetImages && false) {
+        // Disabled to avoid duplicate validation
         const assetImages = await validateAssetImages(page);
 
         // Collect broken links for global report
@@ -1840,6 +1875,62 @@ journey('${monitorName}', async ({ page }) => {
         });
     });
 
+    step('Validate images on "${escapedLabel}" page', async () => {
+        // Wait for initial images to load
+        await page.waitForTimeout(1000);
+
+        // Comprehensive image validation
+        const imageValidation = await page.evaluate(() => {
+            const images = Array.from(document.querySelectorAll('img'));
+            const pictureImages = Array.from(document.querySelectorAll('picture img'));
+            const allImages = [...new Set([...images, ...pictureImages])];
+
+            const broken = [];
+            const valid = [];
+
+            allImages.forEach(img => {
+                const src = img.currentSrc || img.src || img.getAttribute('data-src') || '';
+
+                const isBroken =
+                    !img.complete ||
+                    img.naturalWidth === 0 ||
+                    img.naturalHeight === 0 ||
+                    !src;
+
+                const imageData = {
+                    src: src,
+                    alt: img.alt || '',
+                    naturalWidth: img.naturalWidth,
+                    naturalHeight: img.naturalHeight,
+                    complete: img.complete
+                };
+
+                if (isBroken) {
+                    broken.push(imageData);
+                } else {
+                    valid.push(imageData);
+                }
+            });
+
+            return { broken, valid, total: allImages.length };
+        });
+
+        if (imageValidation.broken.length > 0) {
+            console.log(\`⚠️ Found \${imageValidation.broken.length} broken images on "${escapedLabel}":\`);
+            imageValidation.broken.forEach((img, idx) => {
+                console.log(\`  ❌ [\${idx + 1}] \${img.src}\`);
+                if (img.alt) {
+                    console.log(\`      Alt: "\${img.alt}"\`);
+                }
+                console.log(\`      Status: naturalWidth=\${img.naturalWidth}, complete=\${img.complete}\`);
+            });
+        } else if (imageValidation.total > 0) {
+            console.log(\`✅ All \${imageValidation.valid.length} images loaded successfully on "${escapedLabel}"\`);
+        } else {
+            console.log(\`📭 No images found on "${escapedLabel}"\`);
+        }
+    });
+
     step('Return to previous page', async () => {
         await enhancedStep('Return to previous page', 'homepage', async () => {
             try {
@@ -2034,71 +2125,92 @@ async function validateAssetImages(page: Page): Promise<{
   };
 
   try {
-    // Get all images on the page
-    const images = await page.$$eval("img", (imgs) =>
-      imgs.map((img) => ({
-        src: img.src || img.getAttribute("data-src") || "",
-        alt: img.alt || "",
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-      })),
-    );
+    // Wait a moment for any lazy-loaded images to start loading
+    await page.waitForTimeout(1000);
 
-    // Debug: Log first few image URLs to see what we're checking
-    console.log(`   Sample image URLs being checked:`);
-    images.slice(0, 3).forEach((img, i) => {
-      console.log(`     ${i + 1}. ${img.src}`);
+    // Get all images including their loading status
+    const imagesData = await page.evaluate(() => {
+      const imgs = Array.from(document.querySelectorAll('img'));
+      const pictureImgs = Array.from(document.querySelectorAll('picture img'));
+      const allImgs = [...new Set([...imgs, ...pictureImgs])];
+
+      return allImgs.map(img => {
+        const src = img.currentSrc || img.src || img.getAttribute('data-src') || '';
+        const srcset = img.srcset || '';
+
+        const isBroken =
+          !img.complete ||
+          img.naturalWidth === 0 ||
+          img.naturalHeight === 0 ||
+          (!src && !srcset);
+
+        return {
+          src: src,
+          srcset: srcset,
+          alt: img.alt || '',
+          title: img.title || '',
+          naturalWidth: img.naturalWidth,
+          naturalHeight: img.naturalHeight,
+          complete: img.complete,
+          isBroken: isBroken,
+          parentText: img.parentElement?.textContent?.trim().substring(0, 100) || ''
+        };
+      });
     });
 
-    // Track total images found globally
-    globalTotalLinksFound += images.length;
+    console.log(`   Found ${imagesData.length} images on page`);
 
-    // Use configurable limit for image validation
-    const maxImagesToValidate = Math.min(
-      images.length,
+    // First, check for browser-detected broken images (most reliable)
+    const browserBrokenImages = imagesData.filter(img => img.isBroken && img.src);
+    const validInBrowser = imagesData.filter(img => !img.isBroken && img.src);
+
+    if (browserBrokenImages.length > 0) {
+      console.log(`   ❌ Browser detected ${browserBrokenImages.length} broken images`);
+      browserBrokenImages.forEach(img => {
+        results.brokenImages.push({
+          src: img.src,
+          alt: img.alt || img.title || img.parentText || "No context",
+          error: `Failed to load in browser (naturalWidth=${img.naturalWidth}, complete=${img.complete})`,
+        });
+      });
+    }
+
+    // Track total images found globally
+    globalTotalLinksFound += imagesData.length;
+
+    // For images that loaded in browser, optionally verify via HTTP
+    const maxHttpValidations = Math.min(
+      validInBrowser.length,
       config.allowedDownloads.maxImagesToValidate || 200,
     );
-    const imagesToValidate = images.slice(0, maxImagesToValidate);
 
     console.log(
-      `   Found ${images.length} images, validating ${Math.min(images.length, maxImagesToValidate)}...`,
+      `   Validating ${maxHttpValidations} of ${validInBrowser.length} browser-loaded images via HTTP...`,
     );
 
-    // No URL-specific logic - just check if links work
-
-    // Validate each image - ONLY CHECK IF BROKEN, DON'T TRY TO FIX
-    for (const img of imagesToValidate) {
+    // HTTP validation for images that loaded in browser
+    for (let i = 0; i < Math.min(validInBrowser.length, maxHttpValidations); i++) {
+      const img = validInBrowser[i];
       if (!img.src) continue;
 
       try {
-        // Simply check if the URL works
         const check = await verifyResourceExists(img.src, true);
 
         if (check.exists) {
           results.validImages.push({
             src: img.src,
-            alt: img.alt,
+            alt: img.alt || img.title || "",
           });
         } else {
-          // URL is broken - report it
           results.brokenImages.push({
             src: img.src,
-            alt: img.alt,
-            correctedUrl: undefined, // No suggestions, just report broken
+            alt: img.alt || img.title || img.parentText || "",
             statusCode: check.statusCode,
-            error: check.error || "Resource not found",
+            error: check.error || "HTTP validation failed (may be CORS restricted)",
           });
         }
       } catch (error) {
-        // Invalid URL or other error
-        results.brokenImages.push({
-          src: img.src,
-          alt: img.alt,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Invalid URL or unknown error",
-        });
+        console.log(`   ⚠️ Could not validate: ${img.src}`);
       }
     }
 
@@ -2608,7 +2720,7 @@ async function generateBrokenLinksReport(
     markdown += `Found ${links.length} broken link(s):\n\n`;
 
     links.forEach((link, index) => {
-      markdown += `#### ${index + 1}. ${link.type.toUpperCase()}: ${link.url}\n\n`;
+      markdown += `#### ${index + 1}. ${(link.type || 'LINK').toUpperCase()}: ${link.url || link.brokenUrl}\n\n`;
 
       if (link.altText) {
         markdown += `- **Alt Text:** ${link.altText}\n`;
@@ -2657,7 +2769,7 @@ async function generateBrokenLinksReport(
 
     links.forEach((link, index) => {
       console.log(
-        `     ${index + 1}. [${link.type.toUpperCase()}] ${link.url}`,
+        `     ${index + 1}. [${(link.type || 'LINK').toUpperCase()}] ${link.url || link.brokenUrl}`,
       );
       if (link.suggestedFix) {
         console.log(`        → Suggested: ${link.suggestedFix}`);
