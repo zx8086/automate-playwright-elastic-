@@ -5,110 +5,10 @@ import * as http from "node:http";
 import * as https from "node:https";
 import * as path from "node:path";
 import { type Page, test } from "@playwright/test";
-import { z } from "zod";
-import { config } from "../config";
+import { config, SchemaRegistry, type ElementCounts, type BrokenLink, type BrokenLinksReport, type NavigationPath, type SkippedDownload } from "../config";
 
-const ElementCountsSchema = z
-  .object({
-    images: z.number().int().nonnegative().describe("Number of images found"),
-    paragraphs: z.number().int().nonnegative().describe("Number of paragraphs found"),
-    headings: z.number().int().nonnegative().describe("Number of headings found"),
-    links: z.number().int().nonnegative().describe("Number of links found"),
-    buttons: z.number().int().nonnegative().describe("Number of buttons found"),
-  })
-  .describe("Page element counts for analytics");
-
-const BrokenLinkSchema = z
-  .object({
-    url: z.url().or(z.string()),
-    pageFound: z.string(),
-    type: z.enum(["image", "asset", "download"]),
-    altText: z.string().optional(),
-    suggestedFix: z.string().optional(),
-    statusCode: z.number().int().min(100).max(599).optional(),
-    error: z.string().max(500).optional(),
-    pageUrl: z.string().optional(),
-    brokenUrl: z.string().optional(),
-  })
-  .describe("Broken link information");
-
-const BrokenLinksReportSchema = z
-  .object({
-    reportDate: z.iso.datetime({ offset: true }),
-    baseUrl: z.url(),
-    totalBrokenLinks: z.number().int().nonnegative(),
-    brokenByPage: z.record(z.string(), z.array(BrokenLinkSchema)),
-    summary: z.object({
-      totalPages: z.number().int().nonnegative(),
-      pagesWithBrokenLinks: z.number().int().nonnegative(),
-      totalImages: z.number().int().nonnegative(),
-      brokenImages: z.number().int().nonnegative(),
-      totalAssets: z.number().int().nonnegative(),
-      brokenAssets: z.number().int().nonnegative(),
-    }),
-  })
-  .refine((data) => data.summary.pagesWithBrokenLinks <= data.summary.totalPages, {
-    message: "Pages with broken links cannot exceed total pages",
-  })
-  .describe("Complete broken links report");
-
-type BrokenLink = z.infer<typeof BrokenLinkSchema>;
-type BrokenLinksReport = z.infer<typeof BrokenLinksReportSchema>;
-
-// Default configurations following 4-pillar pattern
-const _defaultPageLoadOptions = {
-  timeout: 30000,
-  imageTimeout: 10000,
-  networkIdleTimeout: 3000,
-};
-
-const _defaultNavigationPath = {
-  isDownloadable: false,
-};
-
-const NavigationPathSchema = z
-  .object({
-    from: z.string().min(1),
-    to: z.string().min(1),
-    label: z.string().min(1).max(200),
-    isDownloadable: z.boolean().default(false),
-    fileSize: z.number().int().positive().optional(),
-    elementCounts: ElementCountsSchema.optional(),
-    fullText: z.string().max(1000).optional(),
-    skippedReason: z.string().max(500).optional(),
-  })
-  .describe("Navigation path between pages");
-
-const SkippedDownloadSchema = z
-  .object({
-    from: z.string().min(1),
-    to: z.string().min(1),
-    label: z.string().min(1).max(200),
-    fileSize: z.number().int().positive().optional(),
-    reason: z.string().min(1).max(500),
-  })
-  .describe("Information about skipped downloads");
-
-const _PageLoadOptionsSchema = z.object({
-  timeout: z.int32().min(1000).max(60000),
-  imageTimeout: z.int32().min(1000).max(30000),
-  networkIdleTimeout: z.int32().min(500).max(10000),
-});
-
-const _PerformanceMetricsSchema = z
-  .object({
-    navigationTiming: z.any(),
-    paintTiming: z.array(z.any()),
-    lcp: z.any().optional(),
-    cls: z.any().optional(),
-    longTasks: z.array(z.any()).optional(),
-  })
-  .describe("Web performance metrics");
-
-// Type inference from schemas
-type ElementCounts = z.infer<typeof ElementCountsSchema>;
-type NavigationPath = z.infer<typeof NavigationPathSchema>;
-type SkippedDownload = z.infer<typeof SkippedDownloadSchema>;
+// Extract schemas from config
+const { ElementCounts: ElementCountsSchema, BrokenLink: BrokenLinkSchema, BrokenLinksReport: BrokenLinksReportSchema, NavigationPath: NavigationPathSchema, SkippedDownload: SkippedDownloadSchema } = SchemaRegistry;
 
 const _logMemoryUsage = () => {
   const memUsage = process.memoryUsage();
@@ -175,12 +75,14 @@ test.describe("Site Navigation Test with Steps", () => {
         }
       } catch (error) {
         console.log(
-          `Failed to clean up ${dir.name}: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to clean up ${dir.name}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
 
-    console.log(`Cleanup complete: ${totalFilesCleanedUp} total file(s) removed\n`);
+    console.log(
+      `Cleanup complete: ${totalFilesCleanedUp} total file(s) removed\n`,
+    );
   });
 
   test.afterAll(async () => {
@@ -194,13 +96,15 @@ test.describe("Site Navigation Test with Steps", () => {
   });
 
   test.beforeEach(async ({ page }) => {
-    [config.server.screenshotDir, config.server.downloadsDir, config.server.syntheticsDir].forEach(
-      (dir) => {
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
+    [
+      config.server.screenshotDir,
+      config.server.downloadsDir,
+      config.server.syntheticsDir,
+    ].forEach((dir) => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
       }
-    );
+    });
 
     // Set desktop viewport
     await page.setViewportSize({ width: 1920, height: 1080 });
@@ -257,22 +161,31 @@ test.describe("Site Navigation Test with Steps", () => {
 
             // Skip if we've already processed this download
             if (processedDownloads.has(absoluteUrl)) {
-              console.log(`⏭️ Skipping already processed download: ${absoluteUrl}`);
+              console.log(
+                `⏭️ Skipping already processed download: ${absoluteUrl}`,
+              );
               return;
             }
 
             // Verify the resource exists and get content length
-            const { exists, contentLength } = await verifyResourceExists(absoluteUrl);
+            const { exists, contentLength } =
+              await verifyResourceExists(absoluteUrl);
 
             if (exists) {
               console.log(`Resource ${item.text} exists and is accessible`);
 
               // Try to download the file
-              const downloadPath = path.join(config.server.downloadsDir, path.basename(item.href));
+              const downloadPath = path.join(
+                config.server.downloadsDir,
+                path.basename(item.href),
+              );
 
-              if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
+              if (
+                contentLength &&
+                contentLength > config.allowedDownloads.maxFileSize
+              ) {
                 console.log(
-                  `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                  `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
                 );
                 const skippedDownload: SkippedDownload = {
                   from: startUrl,
@@ -285,7 +198,10 @@ test.describe("Site Navigation Test with Steps", () => {
                 SkippedDownloadSchema.parse(skippedDownload);
                 skippedDownloads.push(skippedDownload);
               } else {
-                const downloadSuccessful = await downloadFile(absoluteUrl, downloadPath);
+                const downloadSuccessful = await downloadFile(
+                  absoluteUrl,
+                  downloadPath,
+                );
 
                 if (downloadSuccessful) {
                   console.log(`Successfully downloaded: ${downloadPath}`);
@@ -326,7 +242,7 @@ test.describe("Site Navigation Test with Steps", () => {
             }
           } catch (error: unknown) {
             console.log(
-              `Error handling downloadable resource: ${error instanceof Error ? error.message : String(error)}`
+              `Error handling downloadable resource: ${error instanceof Error ? error.message : String(error)}`,
             );
           }
         }
@@ -367,12 +283,15 @@ test.describe("Site Navigation Test with Steps", () => {
               await page.screenshot({
                 path: path.join(
                   config.server.screenshotDir,
-                  `${item.text.replace(/\s+/g, "-").toLowerCase()}.png`
+                  `${item.text.replace(/\s+/g, "-").toLowerCase()}.png`,
                 ),
               });
 
               // Check for unique elements on this page
-              const pageDownloadLinks = await checkPageSpecificElements(page, item.text);
+              const pageDownloadLinks = await checkPageSpecificElements(
+                page,
+                item.text,
+              );
 
               // Validate images on ALL pages (generic for any site)
               console.log(`\n🔍 Validating images on "${item.text}" page...`);
@@ -380,7 +299,7 @@ test.describe("Site Navigation Test with Steps", () => {
 
               if (imageValidation.brokenImages.length > 0) {
                 console.log(
-                  `Found ${imageValidation.brokenImages.length} broken images on "${item.text}"`
+                  `Found ${imageValidation.brokenImages.length} broken images on "${item.text}"`,
                 );
 
                 // Add broken images to global tracking with detailed context
@@ -408,7 +327,9 @@ test.describe("Site Navigation Test with Steps", () => {
                   }
                 });
               } else if (imageValidation.validImages.length > 0) {
-                console.log(`All ${imageValidation.validImages.length} images loaded successfully`);
+                console.log(
+                  `All ${imageValidation.validImages.length} images loaded successfully`,
+                );
               } else {
                 console.log(`No images found on this page`);
               }
@@ -416,32 +337,43 @@ test.describe("Site Navigation Test with Steps", () => {
               // Process any download links found on this page
               if (pageDownloadLinks && pageDownloadLinks.length > 0) {
                 for (const downloadLink of pageDownloadLinks) {
-                  const downloadUrl = new URL(downloadLink.href, currentUrl).toString();
+                  const downloadUrl = new URL(
+                    downloadLink.href,
+                    currentUrl,
+                  ).toString();
 
                   // Skip if we've already processed this download
                   if (processedDownloads.has(downloadUrl)) {
-                    console.log(`⏭️ Skipping already processed download: ${downloadUrl}`);
+                    console.log(
+                      `⏭️ Skipping already processed download: ${downloadUrl}`,
+                    );
                     continue;
                   }
 
                   console.log(
-                    `📥 Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`
+                    `📥 Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`,
                   );
                   try {
                     // Verify the resource exists
-                    const { exists, contentLength } = await verifyResourceExists(downloadUrl);
+                    const { exists, contentLength } =
+                      await verifyResourceExists(downloadUrl);
                     if (exists) {
                       console.log(
-                        `Download resource ${downloadLink.text} exists and is accessible`
+                        `Download resource ${downloadLink.text} exists and is accessible`,
                       );
                       // Try to download the file
                       const downloadPath = path.join(
                         config.server.downloadsDir,
-                        path.basename(downloadLink.href)
+                        path.basename(downloadLink.href),
                       );
-                      const downloadSuccessful = await downloadFile(downloadUrl, downloadPath);
+                      const downloadSuccessful = await downloadFile(
+                        downloadUrl,
+                        downloadPath,
+                      );
                       if (downloadSuccessful) {
-                        console.log(`Successfully downloaded from page: ${downloadPath}`);
+                        console.log(
+                          `Successfully downloaded from page: ${downloadPath}`,
+                        );
                         // Get file size
                         const stats = fs.statSync(downloadPath);
                         console.log(`File size: ${formatFileSize(stats.size)}`);
@@ -459,15 +391,21 @@ test.describe("Site Navigation Test with Steps", () => {
                         processedDownloads.add(downloadUrl);
                       } else {
                         console.log(`Download failed for: ${downloadUrl}`);
-                        if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
+                        if (
+                          contentLength &&
+                          contentLength > config.allowedDownloads.maxFileSize
+                        ) {
                           console.log(
-                            `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                            `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
                           );
-                          fs.existsSync(downloadPath) && fs.unlinkSync(downloadPath);
+                          fs.existsSync(downloadPath) &&
+                            fs.unlinkSync(downloadPath);
                           const skippedDownload: SkippedDownload = {
                             from: startUrl,
                             to: downloadUrl,
-                            label: downloadLink.text.replace(/\s+/g, " ").trim(),
+                            label: downloadLink.text
+                              .replace(/\s+/g, " ")
+                              .trim(),
                             fileSize: contentLength,
                             reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
                           };
@@ -478,7 +416,9 @@ test.describe("Site Navigation Test with Steps", () => {
                           const skippedDownload: SkippedDownload = {
                             from: startUrl,
                             to: downloadUrl,
-                            label: downloadLink.text.replace(/\s+/g, " ").trim(),
+                            label: downloadLink.text
+                              .replace(/\s+/g, " ")
+                              .trim(),
                             fileSize: contentLength,
                             reason: "Download failed",
                           };
@@ -488,11 +428,13 @@ test.describe("Site Navigation Test with Steps", () => {
                         }
                       }
                     } else {
-                      console.log(`Download resource not accessible: ${downloadUrl}`);
+                      console.log(
+                        `Download resource not accessible: ${downloadUrl}`,
+                      );
                     }
                   } catch (error) {
                     console.log(
-                      `Error handling page download: ${error instanceof Error ? error.message : String(error)}`
+                      `Error handling page download: ${error instanceof Error ? error.message : String(error)}`,
                     );
                   }
                 }
@@ -507,7 +449,7 @@ test.describe("Site Navigation Test with Steps", () => {
             }
           } catch (error: unknown) {
             console.log(
-              `Error navigating to "${item.text}": ${error instanceof Error ? error.message : String(error)}`
+              `Error navigating to "${item.text}": ${error instanceof Error ? error.message : String(error)}`,
             );
           }
         }
@@ -522,10 +464,12 @@ test.describe("Site Navigation Test with Steps", () => {
       const regularPages = navigationPaths.filter((p) => !p.isDownloadable);
 
       // Count downloadable resources
-      const downloadableResources = navigationPaths.filter((p) => p.isDownloadable);
+      const downloadableResources = navigationPaths.filter(
+        (p) => p.isDownloadable,
+      );
 
       console.log(
-        `Total visited: ${navigationPaths.length} (${regularPages.length} pages + ${downloadableResources.length} downloadable resources)`
+        `Total visited: ${navigationPaths.length} (${regularPages.length} pages + ${downloadableResources.length} downloadable resources)`,
       );
 
       // List all navigable pages
@@ -540,7 +484,9 @@ test.describe("Site Navigation Test with Steps", () => {
         console.log("\n- Downloadable Resources:");
         downloadableResources.forEach((path, index) => {
           const cleanLabel = path.label.replace(/\s+/g, " ").trim();
-          console.log(`${index + 1}. ${cleanLabel}: ${formatFileSize(path.fileSize || 0)}`);
+          console.log(
+            `${index + 1}. ${cleanLabel}: ${formatFileSize(path.fileSize || 0)}`,
+          );
         });
       }
 
@@ -556,21 +502,24 @@ test.describe("Site Navigation Test with Steps", () => {
 
         console.log("\n- Broken Links Found:");
         console.log(
-          `  Total: ${totalBroken} broken link(s) detected out of ${globalValidatedLinksCount} tested`
+          `  Total: ${totalBroken} broken link(s) detected out of ${globalValidatedLinksCount} tested`,
         );
 
         for (const [pageUrl, links] of globalBrokenLinks) {
           const pageName = pageUrl.split("/").filter(Boolean).pop() || "home";
           console.log(`  - ${pageName} page: ${links.length} broken link(s)`);
         }
-        console.log("\n  See broken-links-reports/ directory for detailed report");
+        console.log(
+          "\n  See broken-links-reports/ directory for detailed report",
+        );
       } else {
         console.log("\n- Link Validation:");
 
         // Show total links validated including images, videos and downloads
         const totalValidated =
           globalValidatedLinksCount + globalVideosValidated + workingAssetCount;
-        const totalFound = globalTotalLinksFound + globalVideosFound + workingAssetCount;
+        const totalFound =
+          globalTotalLinksFound + globalVideosFound + workingAssetCount;
 
         if (totalValidated > 0) {
           console.log(`  All links are working correctly`);
@@ -578,16 +527,18 @@ test.describe("Site Navigation Test with Steps", () => {
           // Show total found vs validated
           if (totalFound > totalValidated) {
             console.log(
-              `  Successfully validated ${totalValidated} link(s) out of ${totalFound} found:`
+              `  Successfully validated ${totalValidated} link(s) out of ${totalFound} found:`,
             );
           } else {
-            console.log(`  📊 Successfully validated ${totalValidated} link(s):`);
+            console.log(
+              `  📊 Successfully validated ${totalValidated} link(s):`,
+            );
           }
 
           if (globalValidatedLinksCount > 0) {
             if (globalTotalLinksFound > globalValidatedLinksCount) {
               console.log(
-                `     - Asset images: ${globalValidatedLinksCount} validated (${globalTotalLinksFound} total found)`
+                `     - Asset images: ${globalValidatedLinksCount} validated (${globalTotalLinksFound} total found)`,
               );
             } else {
               console.log(`     - Asset images: ${globalValidatedLinksCount}`);
@@ -596,7 +547,7 @@ test.describe("Site Navigation Test with Steps", () => {
           if (globalVideosValidated > 0) {
             if (globalVideosFound > globalVideosValidated) {
               console.log(
-                `     - Videos: ${globalVideosValidated} validated (${globalVideosFound} total found)`
+                `     - Videos: ${globalVideosValidated} validated (${globalVideosFound} total found)`,
               );
             } else {
               console.log(`     - Videos: ${globalVideosValidated}`);
@@ -615,14 +566,21 @@ test.describe("Site Navigation Test with Steps", () => {
         console.log("\n- Skipped Downloads:");
         skippedDownloads.forEach((item, index) => {
           const cleanLabel = item.label.replace(/\s+/g, " ").trim();
-          const sizeStr = item.fileSize ? formatFileSize(item.fileSize) : "Unknown size";
+          const sizeStr = item.fileSize
+            ? formatFileSize(item.fileSize)
+            : "Unknown size";
           const reason = item.reason || "Download failed";
-          console.log(`${index + 1}. ${cleanLabel}: ${sizeStr} [SKIPPED: ${reason}]`);
+          console.log(
+            `${index + 1}. ${cleanLabel}: ${sizeStr} [SKIPPED: ${reason}]`,
+          );
         });
       }
 
       // Export data for Elastic Synthetics
-      await exportElasticSyntheticsData(navigationPaths, config.server.syntheticsDir);
+      await exportElasticSyntheticsData(
+        navigationPaths,
+        config.server.syntheticsDir,
+      );
 
       // Create a visual sitemap
       await createVisualSitemap(navigationPaths, config.server.screenshotDir);
@@ -768,7 +726,8 @@ async function identifyNavigation(page: Page) {
 
         // Smart assets directory detection**
         const isAssetsDirectory =
-          (href.endsWith("/assets/") || href.endsWith("/assets")) && !hasFileExtension; // No file extension = directory, not file
+          (href.endsWith("/assets/") || href.endsWith("/assets")) &&
+          !hasFileExtension; // No file extension = directory, not file
 
         // Skip assets directories - they're pages, not downloads
         if (isAssetsDirectory) {
@@ -813,7 +772,7 @@ async function identifyNavigation(page: Page) {
 
     // Check for hidden download links that may be revealed on hover
     const potentialDownloads = document.querySelectorAll(
-      "[data-download], [data-file], .download-link, .download-btn"
+      "[data-download], [data-file], .download-link, .download-btn",
     );
     for (const element of potentialDownloads) {
       const href =
@@ -834,14 +793,16 @@ async function identifyNavigation(page: Page) {
       }
     }
 
-    console.log(`Found ${items.length} navigation items with enhanced detection`);
+    console.log(
+      `Found ${items.length} navigation items with enhanced detection`,
+    );
     return items;
   });
 
   // Rest of the function remains the same...
   if (navItems.length === 0) {
     console.log(
-      " No navigation items found with enhanced selectors, trying comprehensive fallback..."
+      " No navigation items found with enhanced selectors, trying comprehensive fallback...",
     );
 
     // Your existing fallback logic here...
@@ -854,8 +815,10 @@ async function identifyNavigation(page: Page) {
 // Wait for page content to fully load including lazy-loaded elements
 async function checkPageSpecificElements(
   page: Page,
-  pageName: string
-): Promise<Array<{ text: string; href: string; fullText: string; isDownload: boolean }>> {
+  pageName: string,
+): Promise<
+  Array<{ text: string; href: string; fullText: string; isDownload: boolean }>
+> {
   return await test.step(`Check ${pageName} page elements`, async () => {
     // Scroll to trigger lazy loading of images and assets
     await page.evaluate(async () => {
@@ -864,7 +827,9 @@ async function checkPageSpecificElements(
         const viewportHeight = window.innerHeight;
         const totalSteps = Math.ceil(scrollHeight / viewportHeight);
 
-        console.log(`📜 Starting enhanced scroll: ${totalSteps} steps for lazy loading`);
+        console.log(
+          `📜 Starting enhanced scroll: ${totalSteps} steps for lazy loading`,
+        );
 
         for (let step = 0; step < totalSteps; step++) {
           const scrollTo = step * viewportHeight;
@@ -875,10 +840,12 @@ async function checkPageSpecificElements(
 
           // Check for new images that might have loaded
           const newImages = document.querySelectorAll(
-            'img[loading="lazy"], img[data-src], img[src*="nextImageExportOptimizer"]'
+            'img[loading="lazy"], img[data-src], img[src*="nextImageExportOptimizer"]',
           );
           if (newImages.length > 0) {
-            console.log(` Found ${newImages.length} lazy images at scroll position ${scrollTo}`);
+            console.log(
+              ` Found ${newImages.length} lazy images at scroll position ${scrollTo}`,
+            );
           }
         }
 
@@ -899,7 +866,9 @@ async function checkPageSpecificElements(
 
     // Common elements to check
     const elementCounts = await getElementCounts(page);
-    console.log(` Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`);
+    console.log(
+      ` Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`,
+    );
 
     // Wait for page-specific content indicators to ensure full load
     const pageNameLower = pageName.toLowerCase();
@@ -909,20 +878,24 @@ async function checkPageSpecificElements(
       pageNameLower.includes("about") ||
       pageNameLower.includes("tommy")
     ) {
-      const bioElements = await page.locator("article, .bio, .biography, .about, .profile").count();
+      const bioElements = await page
+        .locator("article, .bio, .biography, .about, .profile")
+        .count();
       const textBlocks = await page.locator("p, .text, .content").count();
       console.log(
-        `👤 Biography page elements: ${bioElements} bio sections, ${textBlocks} text blocks`
+        `👤 Biography page elements: ${bioElements} bio sections, ${textBlocks} text blocks`,
       );
     } else if (pageNameLower.includes("contact")) {
       const contactElements = await page
         .locator('form, [type="email"], [type="tel"], address, .contact')
         .count();
       const socialLinks = await page
-        .locator('a[href*="instagram"], a[href*="twitter"], a[href*="facebook"]')
+        .locator(
+          'a[href*="instagram"], a[href*="twitter"], a[href*="facebook"]',
+        )
         .count();
       console.log(
-        `📞 Contact page elements: ${contactElements} contact forms, ${socialLinks} social links`
+        `📞 Contact page elements: ${contactElements} contact forms, ${socialLinks} social links`,
       );
     } else if (
       pageNameLower.includes("asset") ||
@@ -931,7 +904,9 @@ async function checkPageSpecificElements(
       pageNameLower.includes("gallery") ||
       pageNameLower.includes("stills")
     ) {
-      const galleryElements = await page.locator(".gallery, .grid, .assets, .media-grid").count();
+      const galleryElements = await page
+        .locator(".gallery, .grid, .assets, .media-grid")
+        .count();
       const downloadLinks = await page
         .locator('a[href*=".zip"], a[href*="download"], .download')
         .count();
@@ -947,32 +922,41 @@ async function checkPageSpecificElements(
       // Check for high-resolution image links
       const hiResImages = await page
         .locator(
-          'img[src*="7016w"], img[src*="3360w"], img[src*="_high"], img[src*="_large"], img[src*="nextImageExportOptimizer"]'
+          'img[src*="7016w"], img[src*="3360w"], img[src*="_high"], img[src*="_large"], img[src*="nextImageExportOptimizer"]',
         )
         .count();
       console.log(`   - High-res/optimized images: ${hiResImages}`);
 
       // Return empty array if validation is disabled
       return [];
-    } else if (pageNameLower.includes("press") || pageNameLower.includes("release")) {
-      const pressElements = await page.locator(".press, .release, .news, article").count();
+    } else if (
+      pageNameLower.includes("press") ||
+      pageNameLower.includes("release")
+    ) {
+      const pressElements = await page
+        .locator(".press, .release, .news, article")
+        .count();
       const pdfLinks = await page.locator('a[href*=".pdf"]').count();
       console.log(
-        `📰 Press page elements: ${pressElements} press sections, ${pdfLinks} PDF downloads`
+        `📰 Press page elements: ${pressElements} press sections, ${pdfLinks} PDF downloads`,
       );
     } else if (pageNameLower.includes("video")) {
       const videoElements = await page
         .locator('video, iframe[src*="youtube"], iframe[src*="vimeo"], .video')
         .count();
-      const videoDownloads = await page.locator('a[href*=".mp4"], a[href*=".mov"]').count();
+      const videoDownloads = await page
+        .locator('a[href*=".mp4"], a[href*=".mov"]')
+        .count();
       console.log(
-        `🎥 Video page elements: ${videoElements} video players, ${videoDownloads} video downloads`
+        `🎥 Video page elements: ${videoElements} video players, ${videoDownloads} video downloads`,
       );
     } else if (pageNameLower.includes("aleali")) {
-      const profileElements = await page.locator(".profile, .bio, .about, article").count();
+      const profileElements = await page
+        .locator(".profile, .bio, .about, article")
+        .count();
       const imageElements = await page.locator("img").count();
       console.log(
-        `👩 Aleali May page elements: ${profileElements} profile sections, ${imageElements} images`
+        `👩 Aleali May page elements: ${profileElements} profile sections, ${imageElements} images`,
       );
     }
 
@@ -980,13 +964,15 @@ async function checkPageSpecificElements(
     const hasMissingElements = await page.evaluate(() => {
       const criticalSelectors = ["h1", "main", ".content", ".container"];
       const missingElements = criticalSelectors.filter(
-        (selector) => document.querySelectorAll(selector).length === 0
+        (selector) => document.querySelectorAll(selector).length === 0,
       );
       return missingElements;
     });
 
     if (hasMissingElements.length > 0) {
-      console.log(`Missing critical elements: ${hasMissingElements.join(", ")}`);
+      console.log(
+        `Missing critical elements: ${hasMissingElements.join(", ")}`,
+      );
     }
 
     // For asset pages, we've already handled this in validateAssetImages
@@ -1018,7 +1004,7 @@ async function createVisualSitemap(
     fileSize?: number;
     elementCounts?: any;
   }>,
-  outputDir: string
+  outputDir: string,
 ) {
   // Regular pages and downloadable resources
   const regularPages = paths.filter((p) => !p.isDownloadable);
@@ -1060,11 +1046,11 @@ async function createVisualSitemap(
               ${path.elementCounts ? `<div class="element-counts">Elements: ${JSON.stringify(path.elementCounts)}</div>` : ""}
               <img class="screenshot" src="${path.label.replace(/\s+/g, "-").toLowerCase()}.png" onerror="this.style.display='none'" />
             </div>
-          `
+          `,
             )
             .join("")}
         </div>
-      `
+      `,
         )
         .join("")}
     </div>
@@ -1082,7 +1068,7 @@ async function createVisualSitemap(
             <br>
             <a href="${download.to}" target="_blank">${download.to}</a>
           </div>
-        `
+        `,
           )
           .join("")}
       </div>
@@ -1094,7 +1080,9 @@ async function createVisualSitemap(
   `;
 
   fs.writeFileSync(path.join(outputDir, "sitemap.html"), sitemapHtml);
-  console.log(`Created visual sitemap at: ${path.join(outputDir, "sitemap.html")}`);
+  console.log(
+    `Created visual sitemap at: ${path.join(outputDir, "sitemap.html")}`,
+  );
 }
 
 async function exportElasticSyntheticsData(
@@ -1107,7 +1095,7 @@ async function exportElasticSyntheticsData(
     elementCounts?: any;
     fullText?: string;
   }>,
-  _outputDir: string
+  _outputDir: string,
 ) {
   // Get only regular pages (not downloadable resources)
   const regularPages = navigationPaths.filter((p) => !p.isDownloadable);
@@ -1134,20 +1122,21 @@ async function exportElasticSyntheticsData(
   // Save as JSON in the synthetics directory
   fs.writeFileSync(
     path.join(config.server.syntheticsDir, "synthetics-data.json"),
-    JSON.stringify(syntheticsData, null, 2)
+    JSON.stringify(syntheticsData, null, 2),
   );
 
   // Generate and save Elastic Synthetics test file with correct name
   const testCode = generateElasticSyntheticsTest(syntheticsData);
   const _siteId =
-    new URL(config.server.baseUrl).pathname.split("/").filter(Boolean).pop() || "site";
+    new URL(config.server.baseUrl).pathname.split("/").filter(Boolean).pop() ||
+    "site";
   const fileName = `core.journey.ts`;
   const filePath = path.join(config.server.syntheticsDir, fileName);
 
   fs.writeFileSync(filePath, testCode);
 
   console.log(
-    `Exported Elastic Synthetics data to: ${path.join(config.server.syntheticsDir, "synthetics-data.json")}`
+    `Exported Elastic Synthetics data to: ${path.join(config.server.syntheticsDir, "synthetics-data.json")}`,
   );
   console.log(`Generated Elastic Synthetics test at: ${filePath}`);
 
@@ -1658,7 +1647,11 @@ journey('${monitorName}', async ({ page }) => {
     const label = page.label.toLowerCase();
     if (label.includes("bio") || label.includes("about")) {
       pageType = "bio";
-    } else if (label.includes("asset") || label.includes("media") || label.includes("gallery")) {
+    } else if (
+      label.includes("asset") ||
+      label.includes("media") ||
+      label.includes("gallery")
+    ) {
       pageType = "assets";
     } else if (label.includes("press") || label.includes("release")) {
       pageType = "default";
@@ -1821,7 +1814,9 @@ function isDownloadableResource(url: string): boolean {
   if (isAssetsDirectory) {
     console.log(`🔍 Checking URL: ${url}`);
     console.log(`   Extension: ${extension}`);
-    console.log(`   Assets page detected - treating as regular page, not download`);
+    console.log(
+      `   Assets page detected - treating as regular page, not download`,
+    );
     console.log(`   Final result: NOT DOWNLOADABLE`);
     return false;
   }
@@ -1889,7 +1884,7 @@ function isDownloadableResource(url: string): boolean {
 
   const hasDownloadExtension = downloadableExtensions.includes(extension);
   const hasDownloadKeyword = downloadKeywords.some((keyword) =>
-    url.toLowerCase().includes(keyword.toLowerCase())
+    url.toLowerCase().includes(keyword.toLowerCase()),
   );
 
   // More precise download detection that allows assets.zip, asset.zip, etc.**
@@ -1914,8 +1909,11 @@ function isDownloadableResource(url: string): boolean {
   console.log(`   Has download keyword: ${hasDownloadKeyword}`);
   console.log(`   Is download link: ${isDownloadLink}`);
 
-  const isDownloadable = hasDownloadExtension || hasDownloadKeyword || isDownloadLink;
-  console.log(`   Final result: ${isDownloadable ? "DOWNLOADABLE" : "NOT DOWNLOADABLE"}`);
+  const isDownloadable =
+    hasDownloadExtension || hasDownloadKeyword || isDownloadLink;
+  console.log(
+    `   Final result: ${isDownloadable ? "DOWNLOADABLE" : "NOT DOWNLOADABLE"}`,
+  );
 
   return isDownloadable;
 }
@@ -1966,7 +1964,11 @@ async function validateAssetImages(page: Page): Promise<{
 
       return allImgs.map((img) => {
         const htmlImg = img as HTMLImageElement;
-        const src = htmlImg.currentSrc || htmlImg.src || htmlImg.getAttribute("data-src") || "";
+        const src =
+          htmlImg.currentSrc ||
+          htmlImg.src ||
+          htmlImg.getAttribute("data-src") ||
+          "";
         const srcset = htmlImg.srcset || "";
 
         const isBroken =
@@ -1984,7 +1986,8 @@ async function validateAssetImages(page: Page): Promise<{
           naturalHeight: htmlImg.naturalHeight,
           complete: htmlImg.complete,
           isBroken: isBroken,
-          parentText: htmlImg.parentElement?.textContent?.trim().substring(0, 100) || "",
+          parentText:
+            htmlImg.parentElement?.textContent?.trim().substring(0, 100) || "",
         };
       });
     });
@@ -1992,11 +1995,15 @@ async function validateAssetImages(page: Page): Promise<{
     console.log(`   Found ${imagesData.length} images on page`);
 
     // First, check for browser-detected broken images (most reliable)
-    const browserBrokenImages = imagesData.filter((img) => img.isBroken && img.src);
+    const browserBrokenImages = imagesData.filter(
+      (img) => img.isBroken && img.src,
+    );
     const validInBrowser = imagesData.filter((img) => !img.isBroken && img.src);
 
     if (browserBrokenImages.length > 0) {
-      console.log(`   Browser detected ${browserBrokenImages.length} broken images`);
+      console.log(
+        `   Browser detected ${browserBrokenImages.length} broken images`,
+      );
       browserBrokenImages.forEach((img) => {
         results.brokenImages.push({
           src: img.src,
@@ -2012,15 +2019,19 @@ async function validateAssetImages(page: Page): Promise<{
     // For images that loaded in browser, optionally verify via HTTP
     const maxHttpValidations = Math.min(
       validInBrowser.length,
-      config.allowedDownloads.maxImagesToValidate || 200
+      config.allowedDownloads.maxImagesToValidate || 200,
     );
 
     console.log(
-      `   Validating ${maxHttpValidations} of ${validInBrowser.length} browser-loaded images via HTTP...`
+      `   Validating ${maxHttpValidations} of ${validInBrowser.length} browser-loaded images via HTTP...`,
     );
 
     // HTTP validation for images that loaded in browser
-    for (let i = 0; i < Math.min(validInBrowser.length, maxHttpValidations); i++) {
+    for (
+      let i = 0;
+      i < Math.min(validInBrowser.length, maxHttpValidations);
+      i++
+    ) {
       const img = validInBrowser[i];
       if (!img.src) continue;
 
@@ -2037,7 +2048,8 @@ async function validateAssetImages(page: Page): Promise<{
             src: img.src,
             alt: img.alt || img.title || img.parentText || "",
             statusCode: check.statusCode,
-            error: check.error || "HTTP validation failed (may be CORS restricted)",
+            error:
+              check.error || "HTTP validation failed (may be CORS restricted)",
           });
         }
       } catch (_error) {
@@ -2051,7 +2063,7 @@ async function validateAssetImages(page: Page): Promise<{
         href: (link as HTMLAnchorElement).href,
         text: (link as HTMLAnchorElement).textContent?.trim() || "",
         innerHTML: (link as HTMLAnchorElement).innerHTML,
-      }))
+      })),
     );
 
     // Also check for video links if configured
@@ -2069,14 +2081,15 @@ async function validateAssetImages(page: Page): Promise<{
           }
           return null;
         })
-        .filter(Boolean)
+        .filter(Boolean),
     );
 
     // Validate videos if any found
-    const maxVideosToValidate = config.allowedDownloads.maxVideosToValidate || 50;
+    const maxVideosToValidate =
+      config.allowedDownloads.maxVideosToValidate || 50;
     if (videoElements.length > 0) {
       console.log(
-        `   Found ${videoElements.length} video links, validating up to ${maxVideosToValidate}...`
+        `   Found ${videoElements.length} video links, validating up to ${maxVideosToValidate}...`,
       );
       const videosToCheck = videoElements.slice(0, maxVideosToValidate);
 
@@ -2098,7 +2111,10 @@ async function validateAssetImages(page: Page): Promise<{
 
       // Track video statistics separately
       globalVideosFound += videoElements.length;
-      globalVideosValidated += Math.min(videoElements.length, maxVideosToValidate);
+      globalVideosValidated += Math.min(
+        videoElements.length,
+        maxVideosToValidate,
+      );
     }
 
     // Check these links for broken ones too
@@ -2120,7 +2136,7 @@ async function validateAssetImages(page: Page): Promise<{
     }
   } catch (error) {
     console.log(
-      `Error validating asset images: ${error instanceof Error ? error.message : String(error)}`
+      `Error validating asset images: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
@@ -2130,7 +2146,7 @@ async function validateAssetImages(page: Page): Promise<{
 // Better resource verification with proper headers and retry logic
 async function verifyResourceExists(
   url: string,
-  silent: boolean = false
+  silent: boolean = false,
 ): Promise<{
   exists: boolean;
   contentLength?: number;
@@ -2143,7 +2159,9 @@ async function verifyResourceExists(
   while (currentRetry < maxRetries) {
     try {
       if (!silent) {
-        console.log(`📥 Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
+        console.log(
+          `📥 Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`,
+        );
       }
 
       const result = await new Promise<{
@@ -2174,7 +2192,10 @@ async function verifyResourceExists(
         const req = protocol.request(url, options, (res) => {
           const statusCode = res.statusCode || 0;
           const contentType = res.headers["content-type"] || "";
-          const contentLength = Number.parseInt(res.headers["content-length"] || "0", 10);
+          const contentLength = Number.parseInt(
+            res.headers["content-length"] || "0",
+            10,
+          );
 
           if (!silent) {
             console.log(`📥 Resource check response:`);
@@ -2186,7 +2207,8 @@ async function verifyResourceExists(
           // Some servers return 405 for HEAD requests - treat as success if it's an image
           const isSuccess =
             (statusCode >= 200 && statusCode < 400) ||
-            (statusCode === 405 && url.match(/\.(jpg|jpeg|png|gif|webp|tiff|bmp)$/i) !== null); // Method not allowed for HEAD on images
+            (statusCode === 405 &&
+              url.match(/\.(jpg|jpeg|png|gif|webp|tiff|bmp)$/i) !== null); // Method not allowed for HEAD on images
 
           req.destroy();
 
@@ -2248,13 +2270,18 @@ async function verifyResourceExists(
 }
 
 // Download file with retry logic for network failures
-async function downloadFile(url: string, destination: string): Promise<boolean> {
+async function downloadFile(
+  url: string,
+  destination: string,
+): Promise<boolean> {
   const maxRetries = 3;
   let currentRetry = 0;
 
   while (currentRetry < maxRetries) {
     try {
-      console.log(`📥 Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
+      console.log(
+        `📥 Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`,
+      );
 
       const success = await new Promise<boolean>((resolve) => {
         const protocol = url.startsWith("https") ? https : http;
@@ -2284,11 +2311,18 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
           console.log(`📥 Download response: ${statusCode} for ${url}`);
 
           // Handle redirects
-          if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
+          if (
+            statusCode >= 300 &&
+            statusCode < 400 &&
+            response.headers.location
+          ) {
             file.close();
             fs.existsSync(destination) && fs.unlinkSync(destination);
 
-            const redirectUrl = new URL(response.headers.location, url).toString();
+            const redirectUrl = new URL(
+              response.headers.location,
+              url,
+            ).toString();
             console.log(`↗️ Following redirect to: ${redirectUrl}`);
 
             // Recursive call for redirect
@@ -2303,12 +2337,15 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
             console.log(`Content-Type: ${contentType}`);
 
             // Check content length
-            const contentLength = Number.parseInt(response.headers["content-length"] || "0", 10);
+            const contentLength = Number.parseInt(
+              response.headers["content-length"] || "0",
+              10,
+            );
             console.log(`📦 Content-Length: ${formatFileSize(contentLength)}`);
 
             if (contentLength > config.allowedDownloads.maxFileSize) {
               console.log(
-                `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
               );
               file.close();
               fs.existsSync(destination) && fs.unlinkSync(destination);
@@ -2323,7 +2360,9 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
             response.on("data", (chunk) => {
               downloadedSize += chunk.length;
               if (downloadedSize > config.allowedDownloads.maxFileSize) {
-                console.log(`Download cancelled: File size exceeded during download`);
+                console.log(
+                  `Download cancelled: File size exceeded during download`,
+                );
                 req.destroy();
                 file.close();
                 fs.existsSync(destination) && fs.unlinkSync(destination);
@@ -2345,7 +2384,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
                 const stats = fs.statSync(destination);
                 if (stats.size > 0) {
                   console.log(
-                    `Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`
+                    `Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`,
                   );
                   if (!isResolved) {
                     isResolved = true;
@@ -2447,7 +2486,9 @@ function formatFileSize(bytes: number): string {
 }
 
 // Generate comprehensive broken links report
-async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>) {
+async function generateBrokenLinksReport(
+  brokenLinks: Map<string, BrokenLink[]>,
+) {
   if (brokenLinks.size === 0) {
     console.log("\nNo broken links found during validation!");
     return;
@@ -2556,7 +2597,9 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
   console.log("BROKEN LINKS REPORT GENERATED");
   console.log("=".repeat(80));
   console.log(`\n🔴 Total Broken Links Found: ${totalBrokenLinks}`);
-  console.log(`\n📍 Pages with Issues (${report.summary.pagesWithBrokenLinks}):\n`);
+  console.log(
+    `\n📍 Pages with Issues (${report.summary.pagesWithBrokenLinks}):\n`,
+  );
 
   for (const [pageUrl, links] of Object.entries(brokenByPage)) {
     console.log(`\n  ${pageUrl}`);
@@ -2564,7 +2607,7 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
 
     links.forEach((link, index) => {
       console.log(
-        `     ${index + 1}. [${(link.type || "LINK").toUpperCase()}] ${link.url || link.brokenUrl}`
+        `     ${index + 1}. [${(link.type || "LINK").toUpperCase()}] ${link.url || link.brokenUrl}`,
       );
       if (link.suggestedFix) {
         console.log(`        → Suggested: ${link.suggestedFix}`);
@@ -2697,7 +2740,9 @@ async function scanPageForDownloads(page: Page, pageName: string) {
   });
 
   if (downloadLinks.length > 0) {
-    console.log(`📥 Found ${downloadLinks.length} download links on "${pageName}":`);
+    console.log(
+      `📥 Found ${downloadLinks.length} download links on "${pageName}":`,
+    );
     downloadLinks.forEach((link, idx) => {
       console.log(`   ${idx + 1}. 📥 ${link.text} (${link.href})`);
     });

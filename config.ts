@@ -143,12 +143,85 @@ const ConfigSchema = z
     }
   });
 
+// Application-Specific Schemas
+const ElementCountsSchema = z
+  .object({
+    images: z.number().int().nonnegative().describe("Number of images found"),
+    paragraphs: z.number().int().nonnegative().describe("Number of paragraphs found"),
+    headings: z.number().int().nonnegative().describe("Number of headings found"),
+    links: z.number().int().nonnegative().describe("Number of links found"),
+    buttons: z.number().int().nonnegative().describe("Number of buttons found"),
+  })
+  .describe("Page element counts for analytics");
+
+const BrokenLinkSchema = z
+  .object({
+    url: z.url().or(z.string()),
+    pageFound: z.string(),
+    type: z.enum(["image", "asset", "download"]),
+    altText: z.string().optional(),
+    suggestedFix: z.string().optional(),
+    statusCode: z.number().int().min(100).max(599).optional(),
+    error: z.string().max(500).optional(),
+    pageUrl: z.string().optional(),
+    brokenUrl: z.string().optional(),
+  })
+  .describe("Broken link information");
+
+const BrokenLinksReportSchema = z
+  .object({
+    reportDate: z.string().datetime({ offset: true }),
+    baseUrl: z.url(),
+    totalBrokenLinks: z.number().int().nonnegative(),
+    brokenByPage: z.record(z.string(), z.array(BrokenLinkSchema)),
+    summary: z.object({
+      totalPages: z.number().int().nonnegative(),
+      pagesWithBrokenLinks: z.number().int().nonnegative(),
+      totalImages: z.number().int().nonnegative(),
+      brokenImages: z.number().int().nonnegative(),
+      totalAssets: z.number().int().nonnegative(),
+      brokenAssets: z.number().int().nonnegative(),
+    }),
+  })
+  .refine((data) => data.summary.pagesWithBrokenLinks <= data.summary.totalPages, {
+    message: "Pages with broken links cannot exceed total pages",
+  })
+  .describe("Complete broken links report");
+
+const NavigationPathSchema = z
+  .object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+    label: z.string().min(1).max(200),
+    isDownloadable: z.boolean().default(false),
+    fileSize: z.number().int().positive().optional(),
+    elementCounts: ElementCountsSchema.optional(),
+    fullText: z.string().max(1000).optional(),
+    skippedReason: z.string().max(500).optional(),
+  })
+  .describe("Navigation path between pages");
+
+const SkippedDownloadSchema = z
+  .object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+    label: z.string().min(1).max(200),
+    fileSize: z.number().int().positive().optional(),
+    reason: z.string().min(1).max(500),
+  })
+  .describe("Information about skipped downloads");
+
 // Schema Registry
 const SchemaRegistry = {
   Server: ServerConfigSchema,
   Browser: BrowserConfigSchema,
   Download: DownloadConfigSchema,
   Config: ConfigSchema,
+  ElementCounts: ElementCountsSchema,
+  BrokenLink: BrokenLinkSchema,
+  BrokenLinksReport: BrokenLinksReportSchema,
+  NavigationPath: NavigationPathSchema,
+  SkippedDownload: SkippedDownloadSchema,
 } as const;
 
 // ============================================================================
@@ -479,6 +552,11 @@ export type Config = z.infer<typeof ConfigSchema>;
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
 export type DownloadConfig = z.infer<typeof DownloadConfigSchema>;
+export type ElementCounts = z.infer<typeof ElementCountsSchema>;
+export type BrokenLink = z.infer<typeof BrokenLinkSchema>;
+export type BrokenLinksReport = z.infer<typeof BrokenLinksReportSchema>;
+export type NavigationPath = z.infer<typeof NavigationPathSchema>;
+export type SkippedDownload = z.infer<typeof SkippedDownloadSchema>;
 
 // Utility Functions
 export const getConfigJSONSchema = () => ConfigSchema;
