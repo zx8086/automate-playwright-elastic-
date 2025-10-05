@@ -1,25 +1,23 @@
 /* config.ts */
 
+// ============================================================================
+// IMPORTS & ENVIRONMENT SETUP
+// ============================================================================
+
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as dotenv from "dotenv";
 import { z } from "zod";
 
+// Environment detection and setup
 if (typeof Bun === "undefined") {
   dotenv.config();
 }
-const EnvironmentType = z.enum(["development", "staging", "production", "test"]);
-const ScreenshotMode = z.enum(["on", "off", "only-on-failure"]);
-const VideoMode = z.enum(["on", "off", "retain-on-failure"]);
-const TraceMode = z.enum(["on", "off", "retain-on-failure"]);
 
-const DirectoryPath = z
-  .string()
-  .refine((val) => val.startsWith("./") || val.startsWith("/") || val.startsWith("../"), {
-    message: "Directory path must be relative (./) or absolute (/)",
-  });
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
 
-// Directory creation moved to separate utility function
 function ensureDirectoryExists(dirPath: string): string {
   const fullPath = path.resolve(dirPath);
   if (!fs.existsSync(fullPath)) {
@@ -28,11 +26,58 @@ function ensureDirectoryExists(dirPath: string): string {
   return dirPath;
 }
 
+function parseEnvVar(value: string | undefined, type: "string" | "number" | "boolean"): unknown {
+  if (!value) return undefined;
+
+  switch (type) {
+    case "number": {
+      const num = Number(value);
+      return Number.isNaN(num) ? undefined : num;
+    }
+    case "boolean":
+      return value.toLowerCase() === "true" || value === "1";
+    default:
+      return value;
+  }
+}
+
+// ============================================================================
+// ZOD SCHEMA DEFINITIONS
+// ============================================================================
+
+// Basic Enums
+const EnvironmentType = z.enum(["development", "staging", "production", "test"]);
+const ScreenshotMode = z.enum(["on", "off", "only-on-failure"]);
+const VideoMode = z.enum(["on", "off", "retain-on-failure"]);
+const TraceMode = z.enum(["on", "off", "retain-on-failure"]);
+
+// Format Functions
 const HttpsUrl = z.url();
 const PositiveInt = z.int32().min(1);
 const FileSizeBytes = z.int32().min(1);
 const Milliseconds = z.int32().min(0);
 
+// Complex Validators
+const DirectoryPath = z
+  .string()
+  .refine((val) => val.startsWith("./") || val.startsWith("/") || val.startsWith("../"), {
+    message: "Directory path must be relative (./) or absolute (/)",
+  });
+
+const FileExtension = z.string();
+
+const MimeType = z.string().superRefine((val, ctx) => {
+  const mimePattern = /^[a-z]+\/[a-z0-9.+-]+$/i;
+  if (!mimePattern.test(val)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Invalid MIME type format",
+    });
+    return;
+  }
+});
+
+// Configuration Schemas
 const ServerConfigSchema = z.strictObject({
   baseUrl: HttpsUrl,
   screenshotDir: DirectoryPath,
@@ -59,19 +104,6 @@ const BrowserConfigSchema = z.strictObject({
   trace: TraceMode,
 });
 
-const FileExtension = z.string();
-
-const MimeType = z.string().superRefine((val, ctx) => {
-  const mimePattern = /^[a-z]+\/[a-z0-9.+-]+$/i;
-  if (!mimePattern.test(val)) {
-    ctx.addIssue({
-      code: "custom",
-      message: "Invalid MIME type format",
-    });
-    return;
-  }
-});
-
 const DownloadConfigSchema = z.strictObject({
   extensions: z.array(FileExtension),
   maxFileSize: FileSizeBytes,
@@ -86,6 +118,7 @@ const DownloadConfigSchema = z.strictObject({
   maxVideosToValidate: PositiveInt,
 });
 
+// Main Configuration Schema
 const ConfigSchema = z
   .strictObject({
     server: ServerConfigSchema,
@@ -110,6 +143,7 @@ const ConfigSchema = z
     }
   });
 
+// Schema Registry
 const SchemaRegistry = {
   Server: ServerConfigSchema,
   Browser: BrowserConfigSchema,
@@ -117,6 +151,11 @@ const SchemaRegistry = {
   Config: ConfigSchema,
 } as const;
 
+// ============================================================================
+// 4-PILLAR CONFIGURATION PATTERN
+// ============================================================================
+
+// Pillar 1: Default Values
 const enhancedAllowedDownloads = {
   extensions: [
     ".pdf",
@@ -229,6 +268,7 @@ const defaultConfig: Config = {
   },
 };
 
+// Pillar 2: Environment Variable Mapping
 const envVarMapping = {
   server: {
     baseUrl: "BASE_URL",
@@ -260,24 +300,7 @@ const envVarMapping = {
   },
 } as const;
 
-// Environment variable mapping follows 4-pillar pattern - no validation here, only mapping
-
-function parseEnvVar(value: string | undefined, type: "string" | "number" | "boolean"): unknown {
-  if (!value) return undefined;
-
-  switch (type) {
-    case "number": {
-      const num = Number(value);
-      return Number.isNaN(num) ? undefined : num;
-    }
-    case "boolean":
-      return value.toLowerCase() === "true" || value === "1";
-    default:
-      return value;
-  }
-}
-
-// Pillar 3: Manual Configuration Loading with Bun.env optimization
+// Pillar 3: Environment Loading
 function loadConfigFromEnv(): Partial<Config> {
   const envSource = typeof Bun !== "undefined" ? Bun.env : process.env;
 
@@ -376,7 +399,7 @@ function loadConfigFromEnv(): Partial<Config> {
   };
 }
 
-// Pillar 4: Configuration Initialization with Directory Creation
+// Pillar 4: Configuration Initialization
 function initializeConfig(): Config {
   try {
     const envConfig = loadConfigFromEnv();
@@ -441,22 +464,25 @@ function initializeConfig(): Config {
   }
 }
 
-// Export validated configuration instance
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+// Configuration Instance
 export const config = initializeConfig();
 
-// Export schema registry for metadata access
+// Schema Registry
 export { SchemaRegistry };
 
-// Export type definitions
+// Type Definitions
 export type Config = z.infer<typeof ConfigSchema>;
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
 export type DownloadConfig = z.infer<typeof DownloadConfigSchema>;
 
-// Export JSON Schema generation utility (simplified for Zod v4 compatibility)
+// Utility Functions
 export const getConfigJSONSchema = () => ConfigSchema;
 
-// Export configuration validation utility
 export const validateConfiguration = (data: unknown) => {
   const result = ConfigSchema.safeParse(data);
   if (!result.success) {
