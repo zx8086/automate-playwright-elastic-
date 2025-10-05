@@ -15,117 +15,83 @@ const TraceMode = z.enum(["on", "off", "retain-on-failure"]);
 
 const DirectoryPath = z
   .string()
-  .refine(
-    (val) => {
-      return val.startsWith("./") || val.startsWith("/") || val.startsWith("../");
-    },
-    { message: "Directory path must be relative (./) or absolute (/)" }
-  )
-  .transform((val) => {
-    const fullPath = path.resolve(val);
-    if (!fs.existsSync(fullPath)) {
-      fs.mkdirSync(fullPath, { recursive: true });
-    }
-    return val;
+  .refine((val) => val.startsWith("./") || val.startsWith("/") || val.startsWith("../"), {
+    message: "Directory path must be relative (./) or absolute (/)",
   });
 
-const HttpsUrl = z.url().refine((url) => url.startsWith("https://") || url.startsWith("http://"), {
-  message: "URL must use HTTP or HTTPS protocol",
+// Directory creation moved to separate utility function
+function ensureDirectoryExists(dirPath: string): string {
+  const fullPath = path.resolve(dirPath);
+  if (!fs.existsSync(fullPath)) {
+    fs.mkdirSync(fullPath, { recursive: true });
+  }
+  return dirPath;
+}
+
+const HttpsUrl = z.url();
+const PositiveInt = z.int32().min(1);
+const FileSizeBytes = z.int32().min(1);
+const Milliseconds = z.int32().min(0);
+
+const ServerConfigSchema = z.strictObject({
+  baseUrl: HttpsUrl,
+  screenshotDir: DirectoryPath,
+  downloadsDir: DirectoryPath,
+  syntheticsDir: DirectoryPath,
+  pauseBetweenClicks: Milliseconds,
+  environment: EnvironmentType,
+  department: z.string(),
+  departmentShort: z.string(),
+  domain: z.string(),
+  service: z.string(),
+  journeyType: z.string(),
 });
 
-const PositiveInt = z.int32().positive({ message: "Must be a positive integer" });
+const BrowserConfigSchema = z.strictObject({
+  headless: z.boolean(),
+  viewport: z.strictObject({
+    width: PositiveInt,
+    height: PositiveInt,
+  }),
+  ignoreHTTPSErrors: z.boolean(),
+  screenshot: ScreenshotMode,
+  video: VideoMode,
+  trace: TraceMode,
+});
 
-const FileSizeBytes = z
-  .number()
-  .int()
-  .min(1024, { message: "Minimum file size is 1KB" })
-  .max(1073741824, { message: "Maximum file size is 1GB" });
+const FileExtension = z.string();
 
-const Milliseconds = z.int32().min(0, { message: "Timeout must be non-negative" });
+const MimeType = z.string().superRefine((val, ctx) => {
+  const mimePattern = /^[a-z]+\/[a-z0-9.+-]+$/i;
+  if (!mimePattern.test(val)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Invalid MIME type format",
+    });
+    return;
+  }
+});
 
-const ServerConfigSchema = z
-  .object({
-    baseUrl: HttpsUrl,
-    screenshotDir: DirectoryPath,
-    downloadsDir: DirectoryPath,
-    syntheticsDir: DirectoryPath,
-    pauseBetweenClicks: Milliseconds.min(100).max(10000),
-    environment: EnvironmentType,
-    department: z.string().min(1).max(50),
-    departmentShort: z
-      .string()
-      .min(1)
-      .max(10)
-      .transform((val) => val.toUpperCase()),
-    domain: z.string().regex(/^[a-z0-9-]+$/, "Domain must be lowercase with hyphens only"),
-    service: z.string().min(1).max(50),
-    journeyType: z.string().min(1).max(50),
-  })
-  .strict();
-
-const BrowserConfigSchema = z
-  .object({
-    headless: z.boolean(),
-    viewport: z
-      .object({
-        width: PositiveInt.min(320).max(3840),
-        height: PositiveInt.min(240).max(2160),
-      })
-      .refine((viewport) => viewport.width >= viewport.height * 0.5, {
-        message: "Viewport aspect ratio should be reasonable (width >= height * 0.5)",
-      }),
-    ignoreHTTPSErrors: z.boolean(),
-    screenshot: ScreenshotMode,
-    video: VideoMode,
-    trace: TraceMode,
-  })
-  .strict();
-
-const FileExtension = z
-  .string()
-  .regex(/^\.[a-z0-9]+$/i, "Extension must start with . and contain only alphanumeric characters")
-  .transform((val) => val.toLowerCase());
-
-const MimeType = z.string().regex(/^[a-z]+\/[a-z0-9.+-]+$/i, "Invalid MIME type format");
-
-const DownloadConfigSchema = z
-  .object({
-    extensions: z.array(FileExtension).min(1, "At least one file extension must be specified"),
-
-    maxFileSize: FileSizeBytes,
-
-    allowedMimeTypes: z.array(MimeType).min(1, "At least one MIME type must be specified"),
-
-    downloadTimeout: Milliseconds.min(5000).max(300000),
-    maxRetries: PositiveInt.max(10),
-    retryDelay: Milliseconds.min(500).max(30000),
-
-    validateAssetImages: z.boolean(),
-    downloadSampleAssets: z.boolean(),
-    maxSampleAssets: PositiveInt.max(100),
-    maxImagesToValidate: PositiveInt.max(1000),
-    maxVideosToValidate: PositiveInt.max(500),
-  })
-  .refine(
-    (data) => {
-      if (data.downloadSampleAssets && data.maxSampleAssets > 20) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: "When downloading sample assets, maxSampleAssets should not exceed 20",
-      path: ["maxSampleAssets"],
-    }
-  );
+const DownloadConfigSchema = z.strictObject({
+  extensions: z.array(FileExtension),
+  maxFileSize: FileSizeBytes,
+  allowedMimeTypes: z.array(MimeType),
+  downloadTimeout: Milliseconds,
+  maxRetries: PositiveInt,
+  retryDelay: Milliseconds,
+  validateAssetImages: z.boolean(),
+  downloadSampleAssets: z.boolean(),
+  maxSampleAssets: PositiveInt,
+  maxImagesToValidate: PositiveInt,
+  maxVideosToValidate: PositiveInt,
+});
 
 const ConfigSchema = z
-  .object({
+  .strictObject({
     server: ServerConfigSchema,
     browser: BrowserConfigSchema,
     allowedDownloads: DownloadConfigSchema,
   })
-  .strict()
   .superRefine((data, ctx) => {
     if (
       data.browser.headless &&
@@ -143,8 +109,6 @@ const ConfigSchema = z
       });
     }
   });
-
-type Config = z.infer<typeof ConfigSchema>;
 
 const SchemaRegistry = {
   Server: ServerConfigSchema,
@@ -265,7 +229,7 @@ const defaultConfig: Config = {
   },
 };
 
-const _envVarMapping = {
+const envVarMapping = {
   server: {
     baseUrl: "BASE_URL",
     screenshotDir: "SCREENSHOT_DIR",
@@ -296,117 +260,142 @@ const _envVarMapping = {
   },
 } as const;
 
-const EnvString = z.string().trim();
-const _EnvNumber = z.coerce.number();
-const EnvBoolean = z.stringbool();
+// Environment variable mapping follows 4-pillar pattern - no validation here, only mapping
 
-const EnvConfigSchema = z.object({
-  BASE_URL: z.url().optional(),
-  SCREENSHOT_DIR: DirectoryPath.optional(),
-  DOWNLOADS_DIR: DirectoryPath.optional(),
-  SYNTHETICS_DIR: DirectoryPath.optional(),
-  PAUSE_BETWEEN_CLICKS: z.coerce.number().int().min(0).optional(),
-  ENVIRONMENT: EnvironmentType.optional(),
-  DEPARTMENT: EnvString.optional(),
-  DEPARTMENT_SHORT: z
-    .string()
-    .trim()
-    .transform((val) => val.toUpperCase())
-    .optional(),
-  DOMAIN: EnvString.optional(),
-  SERVICE: EnvString.optional(),
-  JOURNEY_TYPE: EnvString.optional(),
-  BROWSER_HEADLESS: EnvBoolean.optional(),
-  VIEWPORT_WIDTH: z.coerce.number().int().positive().optional(),
-  VIEWPORT_HEIGHT: z.coerce.number().int().positive().optional(),
-  IGNORE_HTTPS_ERRORS: EnvBoolean.optional(),
-  SCREENSHOT_MODE: ScreenshotMode.optional(),
-  VIDEO_MODE: VideoMode.optional(),
-  TRACE_MODE: TraceMode.optional(),
-  MAX_DOWNLOAD_SIZE: z.coerce.number().int().min(1024).max(1073741824).optional(),
-  MAX_IMAGES_TO_VALIDATE: z.coerce.number().int().positive().optional(),
-  MAX_VIDEOS_TO_VALIDATE: z.coerce.number().int().positive().optional(),
-  VALIDATE_ASSET_IMAGES: EnvBoolean.optional(),
-  DOWNLOAD_TIMEOUT: z.coerce.number().int().min(0).optional(),
-  MAX_RETRIES: z.coerce.number().int().positive().optional(),
-  RETRY_DELAY: z.coerce.number().int().min(0).optional(),
-});
+function parseEnvVar(value: string | undefined, type: "string" | "number" | "boolean"): unknown {
+  if (!value) return undefined;
 
+  switch (type) {
+    case "number": {
+      const num = Number(value);
+      return Number.isNaN(num) ? undefined : num;
+    }
+    case "boolean":
+      return value.toLowerCase() === "true" || value === "1";
+    default:
+      return value;
+  }
+}
+
+// Pillar 3: Manual Configuration Loading with Bun.env optimization
 function loadConfigFromEnv(): Partial<Config> {
   const envSource = typeof Bun !== "undefined" ? Bun.env : process.env;
 
-  const envResult = EnvConfigSchema.safeParse(envSource);
-
-  if (!envResult.success) {
-    console.warn("Environment variable validation warnings:", envResult.error.issues);
-  }
-
-  const env = envResult.data || {};
-
-  const config: Partial<Config> = {
+  return {
     server: {
-      ...defaultConfig.server,
-      ...(env.BASE_URL && { baseUrl: env.BASE_URL }),
-      ...(env.SCREENSHOT_DIR && { screenshotDir: env.SCREENSHOT_DIR }),
-      ...(env.DOWNLOADS_DIR && { downloadsDir: env.DOWNLOADS_DIR }),
-      ...(env.SYNTHETICS_DIR && { syntheticsDir: env.SYNTHETICS_DIR }),
-      ...(env.PAUSE_BETWEEN_CLICKS !== undefined && {
-        pauseBetweenClicks: env.PAUSE_BETWEEN_CLICKS,
-      }),
-      ...(env.ENVIRONMENT && { environment: env.ENVIRONMENT }),
-      ...(env.DEPARTMENT && { department: env.DEPARTMENT }),
-      ...(env.DEPARTMENT_SHORT && { departmentShort: env.DEPARTMENT_SHORT }),
-      ...(env.DOMAIN && { domain: env.DOMAIN }),
-      ...(env.SERVICE && { service: env.SERVICE }),
-      ...(env.JOURNEY_TYPE && { journeyType: env.JOURNEY_TYPE }),
+      baseUrl:
+        (parseEnvVar(envSource[envVarMapping.server.baseUrl], "string") as string) ||
+        defaultConfig.server.baseUrl,
+      screenshotDir:
+        (parseEnvVar(envSource[envVarMapping.server.screenshotDir], "string") as string) ||
+        defaultConfig.server.screenshotDir,
+      downloadsDir:
+        (parseEnvVar(envSource[envVarMapping.server.downloadsDir], "string") as string) ||
+        defaultConfig.server.downloadsDir,
+      syntheticsDir:
+        (parseEnvVar(envSource[envVarMapping.server.syntheticsDir], "string") as string) ||
+        defaultConfig.server.syntheticsDir,
+      pauseBetweenClicks:
+        (parseEnvVar(envSource[envVarMapping.server.pauseBetweenClicks], "number") as number) ||
+        defaultConfig.server.pauseBetweenClicks,
+      environment:
+        (parseEnvVar(
+          envSource[envVarMapping.server.environment],
+          "string"
+        ) as Config["server"]["environment"]) || defaultConfig.server.environment,
+      department:
+        (parseEnvVar(envSource[envVarMapping.server.department], "string") as string) ||
+        defaultConfig.server.department,
+      departmentShort: (
+        (parseEnvVar(envSource[envVarMapping.server.departmentShort], "string") as string) ||
+        defaultConfig.server.departmentShort
+      ).toUpperCase(),
+      domain:
+        (parseEnvVar(envSource[envVarMapping.server.domain], "string") as string) ||
+        defaultConfig.server.domain,
+      service:
+        (parseEnvVar(envSource[envVarMapping.server.service], "string") as string) ||
+        defaultConfig.server.service,
+      journeyType:
+        (parseEnvVar(envSource[envVarMapping.server.journeyType], "string") as string) ||
+        defaultConfig.server.journeyType,
     },
     browser: {
-      ...defaultConfig.browser,
-      ...(env.BROWSER_HEADLESS !== undefined && {
-        headless: env.BROWSER_HEADLESS,
-      }),
+      headless:
+        (parseEnvVar(envSource[envVarMapping.browser.headless], "boolean") as boolean) ??
+        defaultConfig.browser.headless,
       viewport: {
-        width: env.VIEWPORT_WIDTH || defaultConfig.browser.viewport.width,
-        height: env.VIEWPORT_HEIGHT || defaultConfig.browser.viewport.height,
+        width:
+          (parseEnvVar(envSource[envVarMapping.browser["viewport.width"]], "number") as number) ||
+          defaultConfig.browser.viewport.width,
+        height:
+          (parseEnvVar(envSource[envVarMapping.browser["viewport.height"]], "number") as number) ||
+          defaultConfig.browser.viewport.height,
       },
-      ...(env.IGNORE_HTTPS_ERRORS !== undefined && {
-        ignoreHTTPSErrors: env.IGNORE_HTTPS_ERRORS,
-      }),
-      ...(env.SCREENSHOT_MODE && { screenshot: env.SCREENSHOT_MODE }),
-      ...(env.VIDEO_MODE && { video: env.VIDEO_MODE }),
-      ...(env.TRACE_MODE && { trace: env.TRACE_MODE }),
+      ignoreHTTPSErrors:
+        (parseEnvVar(envSource[envVarMapping.browser.ignoreHTTPSErrors], "boolean") as boolean) ??
+        defaultConfig.browser.ignoreHTTPSErrors,
+      screenshot:
+        (parseEnvVar(
+          envSource[envVarMapping.browser.screenshot],
+          "string"
+        ) as Config["browser"]["screenshot"]) || defaultConfig.browser.screenshot,
+      video:
+        (parseEnvVar(
+          envSource[envVarMapping.browser.video],
+          "string"
+        ) as Config["browser"]["video"]) || defaultConfig.browser.video,
+      trace:
+        (parseEnvVar(
+          envSource[envVarMapping.browser.trace],
+          "string"
+        ) as Config["browser"]["trace"]) || defaultConfig.browser.trace,
     },
     allowedDownloads: {
       ...defaultConfig.allowedDownloads,
-      ...(env.MAX_DOWNLOAD_SIZE !== undefined && {
-        maxFileSize: env.MAX_DOWNLOAD_SIZE,
-      }),
-      ...(env.MAX_IMAGES_TO_VALIDATE !== undefined && {
-        maxImagesToValidate: env.MAX_IMAGES_TO_VALIDATE,
-      }),
-      ...(env.MAX_VIDEOS_TO_VALIDATE !== undefined && {
-        maxVideosToValidate: env.MAX_VIDEOS_TO_VALIDATE,
-      }),
-      ...(env.VALIDATE_ASSET_IMAGES !== undefined && {
-        validateAssetImages: env.VALIDATE_ASSET_IMAGES,
-      }),
-      ...(env.DOWNLOAD_TIMEOUT !== undefined && {
-        downloadTimeout: env.DOWNLOAD_TIMEOUT,
-      }),
-      ...(env.MAX_RETRIES !== undefined && { maxRetries: env.MAX_RETRIES }),
-      ...(env.RETRY_DELAY !== undefined && { retryDelay: env.RETRY_DELAY }),
+      extensions: defaultConfig.allowedDownloads.extensions.map((ext) => ext.toLowerCase()),
+      maxFileSize:
+        (parseEnvVar(envSource[envVarMapping.allowedDownloads.maxFileSize], "number") as number) ||
+        defaultConfig.allowedDownloads.maxFileSize,
+      maxImagesToValidate:
+        (parseEnvVar(
+          envSource[envVarMapping.allowedDownloads.maxImagesToValidate],
+          "number"
+        ) as number) || defaultConfig.allowedDownloads.maxImagesToValidate,
+      maxVideosToValidate:
+        (parseEnvVar(
+          envSource[envVarMapping.allowedDownloads.maxVideosToValidate],
+          "number"
+        ) as number) || defaultConfig.allowedDownloads.maxVideosToValidate,
+      validateAssetImages:
+        (parseEnvVar(
+          envSource[envVarMapping.allowedDownloads.validateAssetImages],
+          "boolean"
+        ) as boolean) ?? defaultConfig.allowedDownloads.validateAssetImages,
     },
   };
-
-  return config;
 }
 
+// Pillar 4: Configuration Initialization with Directory Creation
 function initializeConfig(): Config {
   try {
     const envConfig = loadConfigFromEnv();
 
     const mergedConfig = {
-      server: { ...defaultConfig.server, ...envConfig.server },
+      server: {
+        ...defaultConfig.server,
+        ...envConfig.server,
+        // Ensure directories exist during merge
+        screenshotDir: ensureDirectoryExists(
+          envConfig.server?.screenshotDir || defaultConfig.server.screenshotDir
+        ),
+        downloadsDir: ensureDirectoryExists(
+          envConfig.server?.downloadsDir || defaultConfig.server.downloadsDir
+        ),
+        syntheticsDir: ensureDirectoryExists(
+          envConfig.server?.syntheticsDir || defaultConfig.server.syntheticsDir
+        ),
+      },
       browser: {
         ...defaultConfig.browser,
         ...envConfig.browser,
@@ -425,13 +414,19 @@ function initializeConfig(): Config {
 
     if (!result.success) {
       console.error("Configuration validation failed:");
-      console.error(JSON.stringify(result.error.issues, null, 2));
+      const prettyError = z.prettifyError(result.error);
+      console.error(prettyError);
 
       const issues = result.error.issues
-        .map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`)
+        .map((issue) => {
+          const path = issue.path.length > 0 ? issue.path.join(".") : "root";
+          return `  - ${path}: ${issue.message}`;
+        })
         .join("\n");
 
-      throw new Error(`Invalid configuration:\n${issues}`);
+      throw new Error(
+        `Invalid configuration:\n${issues}\n\nPlease check your environment variables and default configuration.`
+      );
     }
 
     console.log("Configuration loaded successfully");
@@ -446,8 +441,26 @@ function initializeConfig(): Config {
   }
 }
 
+// Export validated configuration instance
 export const config = initializeConfig();
+
+// Export schema registry for metadata access
 export { SchemaRegistry };
+
+// Export type definitions
+export type Config = z.infer<typeof ConfigSchema>;
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
 export type DownloadConfig = z.infer<typeof DownloadConfigSchema>;
+
+// Export JSON Schema generation utility (simplified for Zod v4 compatibility)
+export const getConfigJSONSchema = () => ConfigSchema;
+
+// Export configuration validation utility
+export const validateConfiguration = (data: unknown) => {
+  const result = ConfigSchema.safeParse(data);
+  if (!result.success) {
+    throw new Error(JSON.stringify(result.error.issues, null, 2));
+  }
+  return result.data;
+};

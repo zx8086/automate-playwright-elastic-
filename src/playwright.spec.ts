@@ -20,7 +20,7 @@ const ElementCountsSchema = z
 
 const BrokenLinkSchema = z
   .object({
-    url: z.string().url().or(z.string()),
+    url: z.url().or(z.string()),
     pageFound: z.string(),
     type: z.enum(["image", "asset", "download"]),
     altText: z.string().optional(),
@@ -34,8 +34,8 @@ const BrokenLinkSchema = z
 
 const BrokenLinksReportSchema = z
   .object({
-    reportDate: z.string().datetime({ offset: true }),
-    baseUrl: z.string().url(),
+    reportDate: z.iso.datetime({ offset: true }),
+    baseUrl: z.url(),
     totalBrokenLinks: z.number().int().nonnegative(),
     brokenByPage: z.record(z.string(), z.array(BrokenLinkSchema)),
     summary: z.object({
@@ -54,6 +54,17 @@ const BrokenLinksReportSchema = z
 
 type BrokenLink = z.infer<typeof BrokenLinkSchema>;
 type BrokenLinksReport = z.infer<typeof BrokenLinksReportSchema>;
+
+// Default configurations following 4-pillar pattern
+const _defaultPageLoadOptions = {
+  timeout: 30000,
+  imageTimeout: 10000,
+  networkIdleTimeout: 3000,
+};
+
+const _defaultNavigationPath = {
+  isDownloadable: false,
+};
 
 const NavigationPathSchema = z
   .object({
@@ -78,21 +89,19 @@ const SkippedDownloadSchema = z
   })
   .describe("Information about skipped downloads");
 
-const _PageLoadOptionsSchema = z
-  .object({
-    timeout: z.number().int().min(1000).max(60000).default(30000),
-    imageTimeout: z.number().int().min(1000).max(30000).default(10000),
-    networkIdleTimeout: z.number().int().min(500).max(10000).default(3000),
-  })
-  .describe("Page load timeout configuration");
+const _PageLoadOptionsSchema = z.object({
+  timeout: z.int32().min(1000).max(60000),
+  imageTimeout: z.int32().min(1000).max(30000),
+  networkIdleTimeout: z.int32().min(500).max(10000),
+});
 
 const _PerformanceMetricsSchema = z
   .object({
-    navigationTiming: z.any().describe("PerformanceNavigationTiming object"),
-    paintTiming: z.array(z.any()).describe("Array of PerformancePaintTiming"),
-    lcp: z.any().optional().describe("Largest Contentful Paint entry"),
-    cls: z.any().optional().describe("Cumulative Layout Shift entry"),
-    longTasks: z.array(z.any()).optional().describe("Array of long task entries"),
+    navigationTiming: z.any(),
+    paintTiming: z.array(z.any()),
+    lcp: z.any().optional(),
+    cls: z.any().optional(),
+    longTasks: z.array(z.any()).optional(),
   })
   .describe("Web performance metrics");
 
@@ -655,7 +664,6 @@ async function identifyNavigation(page: Page) {
       isDownload: boolean;
     }> = [];
 
-    // ENHANCED: More comprehensive selectors for all press kit types
     const navSelectors = [
       // Standard navigation
       "nav a",
@@ -727,7 +735,7 @@ async function identifyNavigation(page: Page) {
 
         if (!text) continue;
 
-        // **FIXED: Better download detection that handles assets pages correctly**
+        // Better download detection that handles assets pages correctly**
         const extension = href.split(".").pop()?.toLowerCase() || "";
         const hasFileExtension = [
           "pdf",
@@ -758,7 +766,7 @@ async function identifyNavigation(page: Page) {
           "indd",
         ].includes(extension);
 
-        // **NEW: Smart assets directory detection**
+        // Smart assets directory detection**
         const isAssetsDirectory =
           (href.endsWith("/assets/") || href.endsWith("/assets")) && !hasFileExtension; // No file extension = directory, not file
 
@@ -778,7 +786,7 @@ async function identifyNavigation(page: Page) {
           continue;
         }
 
-        // **ENHANCED: Proper download detection**
+        // Proper download detection**
         const isDownload =
           hasFileExtension ||
           href.includes("/download") ||
@@ -789,7 +797,6 @@ async function identifyNavigation(page: Page) {
           href.includes("images.zip") ||
           href.includes("media.zip") ||
           text.toLowerCase().includes("download") ||
-          // **NEW: Allow assets.zip, asset.zip but not /assets/ directories**
           (href.toLowerCase().includes("assets") && hasFileExtension);
 
         // Check if this link is already in our list
@@ -804,7 +811,7 @@ async function identifyNavigation(page: Page) {
       }
     }
 
-    // ENHANCED: Special handling for hidden download links
+    // Check for hidden download links that may be revealed on hover
     const potentialDownloads = document.querySelectorAll(
       "[data-download], [data-file], .download-link, .download-btn"
     );
@@ -844,13 +851,13 @@ async function identifyNavigation(page: Page) {
   return navItems;
 }
 
-// ENHANCED: Better page-specific element checking with improved scrolling
+// Wait for page content to fully load including lazy-loaded elements
 async function checkPageSpecificElements(
   page: Page,
   pageName: string
 ): Promise<Array<{ text: string; href: string; fullText: string; isDownload: boolean }>> {
   return await test.step(`Check ${pageName} page elements`, async () => {
-    // ENHANCED: Better scrolling for lazy loading (especially for asset pages)
+    // Scroll to trigger lazy loading of images and assets
     await page.evaluate(async () => {
       const scrollToBottomEnhanced = async () => {
         const scrollHeight = document.documentElement.scrollHeight;
@@ -894,7 +901,7 @@ async function checkPageSpecificElements(
     const elementCounts = await getElementCounts(page);
     console.log(` Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`);
 
-    // ENHANCED: More comprehensive page-specific checks
+    // Wait for page-specific content indicators to ensure full load
     const pageNameLower = pageName.toLowerCase();
 
     if (
@@ -945,72 +952,6 @@ async function checkPageSpecificElements(
         .count();
       console.log(`   - High-res/optimized images: ${hiResImages}`);
 
-      // Image validation is now done for ALL pages in the main navigation loop
-      // Skip duplicate validation here since it's already done above
-      /* Disabled code block - image validation happens in main navigation loop
-      if (config.allowedDownloads.validateAssetImages) {
-        // Disabled to avoid duplicate validation - images are validated in main navigation loop
-        const assetImages = await validateAssetImages(page);
-
-        // Collect broken links for global report
-        const pageUrl = page.url();
-        const pageBrokenLinks: BrokenLink[] = [];
-
-        if (assetImages.brokenImages.length > 0) {
-          console.log(`\nFound ${assetImages.brokenImages.length} broken links:`);
-          assetImages.brokenImages.forEach((img, index) => {
-            console.log(`   ${index + 1}. ${img.src}`);
-            if (img.statusCode) {
-              console.log(`      Status: ${img.statusCode}`);
-            }
-
-            // Add to broken links collection
-            pageBrokenLinks.push({
-              url: img.src,
-              pageFound: pageUrl,
-              type: "image",
-              altText: img.alt || undefined,
-              suggestedFix: img.correctedUrl,
-              statusCode: img.statusCode,
-              error: img.error,
-            });
-          });
-
-          // Store broken links for this page
-          if (pageBrokenLinks.length > 0) {
-            globalBrokenLinks.set(pageUrl, pageBrokenLinks);
-          }
-
-          // Create a summary report
-          const brokenReport = {
-            pageUrl: page.url(),
-            totalImages: assetImages.validImages.length + assetImages.brokenImages.length,
-            brokenCount: assetImages.brokenImages.length,
-            validCount: assetImages.validImages.length,
-          };
-
-          console.log(`\nLink validation summary for ${pageName}:`);
-          console.log(`   Total links checked: ${brokenReport.totalImages}`);
-          console.log(`   Valid: ${brokenReport.validCount}`);
-          console.log(`   BROKEN: ${brokenReport.brokenCount}`);
-        } else if (assetImages.validImages.length > 0) {
-          console.log(
-            `All ${assetImages.validImages.length} asset images are valid and accessible`
-          );
-        }
-
-        // Track total validated links globally
-        const totalValidatedOnPage =
-          assetImages.validImages.length + assetImages.brokenImages.length;
-        globalValidatedLinksCount += totalValidatedOnPage;
-        _globalWorkingLinksCount += assetImages.validImages.length;
-
-        // Don't download anything - we're only checking for broken links
-        // Return empty array since we're not downloading broken assets
-        return [];
-      }
-      */ // End of disabled code block
-
       // Return empty array if validation is disabled
       return [];
     } else if (pageNameLower.includes("press") || pageNameLower.includes("release")) {
@@ -1048,7 +989,6 @@ async function checkPageSpecificElements(
       console.log(`Missing critical elements: ${hasMissingElements.join(", ")}`);
     }
 
-    // **NEW: SCAN FOR DOWNLOAD LINKS ON THIS PAGE**
     // For asset pages, we've already handled this in validateAssetImages
     if (
       pageNameLower.includes("asset") ||
@@ -1866,11 +1806,11 @@ journey('${monitorName}', async ({ page }) => {
   return code;
 }
 
-// ENHANCED: Better downloadable resource detection with proper assets page handling
+// Detect downloadable resources based on link attributes and context
 function isDownloadableResource(url: string): boolean {
   const extension = path.extname(url).toLowerCase();
 
-  // **ENHANCED: Smart assets page detection that preserves actual downloads**
+  // Smart assets page detection that preserves actual downloads**
   // Only skip if it's a directory path ending with /assets/ or /assets, not actual files
   const isAssetsDirectory =
     ((url.endsWith("/assets/") || url.endsWith("/assets")) && !extension) || // No file extension = directory, not file
@@ -1952,7 +1892,7 @@ function isDownloadableResource(url: string): boolean {
     url.toLowerCase().includes(keyword.toLowerCase())
   );
 
-  // **ENHANCED: More precise download detection that allows assets.zip, asset.zip, etc.**
+  // More precise download detection that allows assets.zip, asset.zip, etc.**
   const isDownloadLink =
     url.toLowerCase().includes("download") ||
     url.toLowerCase().includes("files/") ||
@@ -1966,7 +1906,6 @@ function isDownloadableResource(url: string): boolean {
     url.toLowerCase().includes("press-release") ||
     url.toLowerCase().includes("high-res") ||
     url.toLowerCase().includes("highres") ||
-    // **NEW: Allow assets.zip, asset.zip but not /assets/ directories**
     (url.toLowerCase().includes("assets") && extension.length > 0);
 
   console.log(`🔍 Checking URL: ${url}`);
@@ -2248,7 +2187,6 @@ async function verifyResourceExists(
           const isSuccess =
             (statusCode >= 200 && statusCode < 400) ||
             (statusCode === 405 && url.match(/\.(jpg|jpeg|png|gif|webp|tiff|bmp)$/i) !== null); // Method not allowed for HEAD on images
-          // Note: 403 Forbidden and 401 Unauthorized should NEVER be treated as success
 
           req.destroy();
 
@@ -2309,7 +2247,7 @@ async function verifyResourceExists(
   return { exists: false, error: "All verification attempts failed" };
 }
 
-// ENHANCED: Download function with improved error handling and retry logic
+// Download file with retry logic for network failures
 async function downloadFile(url: string, destination: string): Promise<boolean> {
   const maxRetries = 3;
   let currentRetry = 0;
@@ -2642,7 +2580,7 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
   console.log(`${"=".repeat(80)}\n`);
 }
 
-// **NEW FUNCTION: Scan current page for download links**
+// Scan current page for download links**
 async function scanPageForDownloads(page: Page, pageName: string) {
   console.log(`🔍 Scanning "${pageName}" for download links...`);
 
@@ -2714,11 +2652,9 @@ async function scanPageForDownloads(page: Page, pageName: string) {
             continue;
           }
 
-          // **ADD THIS NEW FILTER HERE** ⬇️
           if (href.endsWith("/assets/") || href.endsWith("/assets")) {
             continue; // Skip assets page URLs, they're not downloads
           }
-          // **END OF NEW FILTER** ⬆️
 
           const text = link.textContent?.trim() || "";
           if (!text) continue;
