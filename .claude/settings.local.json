@@ -25,7 +25,8 @@
       "Bash(bun playwright test:*)",
       "Bash(bunx tsc:*)",
       "Bash(timeout 10 bun run test:*)",
-      "Bash(bun:*)"
+      "Bash(bun:*)",
+      "Bash(sed:*)"
     ],
     "deny": [],
     "ask": []

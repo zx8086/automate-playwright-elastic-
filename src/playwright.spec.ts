@@ -5,31 +5,40 @@ import * as http from "node:http";
 import * as https from "node:https";
 import * as path from "node:path";
 import { type Page, test } from "@playwright/test";
-import { config, SchemaRegistry, type ElementCounts, type BrokenLink, type BrokenLinksReport, type NavigationPath, type SkippedDownload } from "../config";
+import {
+  type BrokenLink,
+  type BrokenLinksReport,
+  config,
+  type ElementCounts,
+  type NavigationPath,
+  SchemaRegistry,
+  type SkippedDownload,
+} from "../config";
+import {
+  CRITICAL_SELECTORS,
+  DEFAULT_TEXT,
+  DOWNLOAD_SELECTORS,
+  DOWNLOADABLE_EXTENSIONS,
+  NAVIGATION_SELECTORS,
+  RETRY_CONFIG,
+  TIMEOUTS,
+  VALIDATION_LIMITS,
+  VIDEO_SELECTORS,
+} from "./constants";
+import { DownloadDetector } from "./download-detector";
+import { generateElasticSyntheticsTest } from "./synthetics-generator";
+import { TestState } from "./test-state";
+import { formatFileSize } from "./utils";
 
 // Extract schemas from config
-const { ElementCounts: ElementCountsSchema, BrokenLink: BrokenLinkSchema, BrokenLinksReport: BrokenLinksReportSchema, NavigationPath: NavigationPathSchema, SkippedDownload: SkippedDownloadSchema } = SchemaRegistry;
+const {
+  ElementCounts: ElementCountsSchema,
+  NavigationPath: NavigationPathSchema,
+  SkippedDownload: SkippedDownloadSchema,
+} = SchemaRegistry;
 
-const _logMemoryUsage = () => {
-  const memUsage = process.memoryUsage();
-  console.log("Memory Usage:", {
-    rss: `${Math.round(memUsage.rss / 1024 / 1024)} MB`,
-    heapTotal: `${Math.round(memUsage.heapTotal / 1024 / 1024)} MB`,
-    heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)} MB`,
-    external: `${Math.round(memUsage.external / 1024 / 1024)} MB`,
-  });
-};
-
-// Global broken links collector
-const globalBrokenLinks: Map<string, BrokenLink[]> = new Map();
-// Track total links validated across all pages
-const globalValidatedLinksCount = 0;
-const _globalWorkingLinksCount = 0;
-let globalTotalLinksFound = 0;
-// Track video validation separately
-let globalVideosFound = 0;
-let globalVideosValidated = 0;
-let _globalBrokenVideos = 0;
+// Initialize test state
+const testState = new TestState();
 
 test.describe("Site Navigation Test with Steps", () => {
   test.setTimeout(180000); // 3 minutes
@@ -37,7 +46,7 @@ test.describe("Site Navigation Test with Steps", () => {
   test.beforeAll(async () => {
     // console.log('\nInitial Memory Usage:');
     // logMemoryUsage();
-    globalBrokenLinks.clear();
+    testState.clearBrokenLinks();
 
     // Clean up all output directories from previous runs
     const directoriesToClean = [
@@ -75,14 +84,12 @@ test.describe("Site Navigation Test with Steps", () => {
         }
       } catch (error) {
         console.log(
-          `Failed to clean up ${dir.name}: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to clean up ${dir.name}: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     }
 
-    console.log(
-      `Cleanup complete: ${totalFilesCleanedUp} total file(s) removed\n`,
-    );
+    console.log(`Cleanup complete: ${totalFilesCleanedUp} total file(s) removed\n`);
   });
 
   test.afterAll(async () => {
@@ -90,21 +97,19 @@ test.describe("Site Navigation Test with Steps", () => {
     // logMemoryUsage();
 
     // Generate broken links report
-    if (globalBrokenLinks.size > 0) {
-      await generateBrokenLinksReport(globalBrokenLinks);
+    if (testState.hasBrokenLinks()) {
+      await generateBrokenLinksReport(testState.getBrokenLinks());
     }
   });
 
   test.beforeEach(async ({ page }) => {
-    [
-      config.server.screenshotDir,
-      config.server.downloadsDir,
-      config.server.syntheticsDir,
-    ].forEach((dir) => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+    [config.server.screenshotDir, config.server.downloadsDir, config.server.syntheticsDir].forEach(
+      (dir) => {
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
       }
-    });
+    );
 
     // Set desktop viewport
     await page.setViewportSize({ width: 1920, height: 1080 });
@@ -112,7 +117,7 @@ test.describe("Site Navigation Test with Steps", () => {
     // Navigate to site
     await page.goto(config.server.baseUrl, {
       waitUntil: "domcontentloaded",
-      timeout: 60000,
+      timeout: TIMEOUTS.PAGE_LOAD,
     });
   });
 
@@ -155,37 +160,28 @@ test.describe("Site Navigation Test with Steps", () => {
         }
 
         // Check if it's a downloadable resource
-        if (isDownloadableResource(item.href)) {
+        if (DownloadDetector.isDownloadableResource(item.href)) {
           try {
             console.log(`📥 Handling downloadable resource: ${item.text}`);
 
             // Skip if we've already processed this download
             if (processedDownloads.has(absoluteUrl)) {
-              console.log(
-                `⏭️ Skipping already processed download: ${absoluteUrl}`,
-              );
+              console.log(`⏭️ Skipping already processed download: ${absoluteUrl}`);
               return;
             }
 
             // Verify the resource exists and get content length
-            const { exists, contentLength } =
-              await verifyResourceExists(absoluteUrl);
+            const { exists, contentLength } = await verifyResourceExists(absoluteUrl);
 
             if (exists) {
               console.log(`Resource ${item.text} exists and is accessible`);
 
               // Try to download the file
-              const downloadPath = path.join(
-                config.server.downloadsDir,
-                path.basename(item.href),
-              );
+              const downloadPath = path.join(config.server.downloadsDir, path.basename(item.href));
 
-              if (
-                contentLength &&
-                contentLength > config.allowedDownloads.maxFileSize
-              ) {
+              if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
                 console.log(
-                  `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
+                  `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
                 );
                 const skippedDownload: SkippedDownload = {
                   from: startUrl,
@@ -198,10 +194,7 @@ test.describe("Site Navigation Test with Steps", () => {
                 SkippedDownloadSchema.parse(skippedDownload);
                 skippedDownloads.push(skippedDownload);
               } else {
-                const downloadSuccessful = await downloadFile(
-                  absoluteUrl,
-                  downloadPath,
-                );
+                const downloadSuccessful = await downloadFile(absoluteUrl, downloadPath);
 
                 if (downloadSuccessful) {
                   console.log(`Successfully downloaded: ${downloadPath}`);
@@ -242,7 +235,7 @@ test.describe("Site Navigation Test with Steps", () => {
             }
           } catch (error: unknown) {
             console.log(
-              `Error handling downloadable resource: ${error instanceof Error ? error.message : String(error)}`,
+              `Error handling downloadable resource: ${error instanceof Error ? error.message : String(error)}`
             );
           }
         }
@@ -251,7 +244,7 @@ test.describe("Site Navigation Test with Steps", () => {
           try {
             // For regular pages, navigate directly to the URL instead of clicking
             console.log(`Direct navigation to: ${absoluteUrl}`);
-            await page.goto(absoluteUrl, { timeout: 30000 });
+            await page.goto(absoluteUrl, { timeout: TIMEOUTS.NAVIGATION });
 
             // Wait for the page to load
             await page.waitForLoadState("domcontentloaded");
@@ -283,15 +276,12 @@ test.describe("Site Navigation Test with Steps", () => {
               await page.screenshot({
                 path: path.join(
                   config.server.screenshotDir,
-                  `${item.text.replace(/\s+/g, "-").toLowerCase()}.png`,
+                  `${item.text.replace(/\s+/g, "-").toLowerCase()}.png`
                 ),
               });
 
               // Check for unique elements on this page
-              const pageDownloadLinks = await checkPageSpecificElements(
-                page,
-                item.text,
-              );
+              const pageDownloadLinks = await checkPageSpecificElements(page, item.text);
 
               // Validate images on ALL pages (generic for any site)
               console.log(`\n🔍 Validating images on "${item.text}" page...`);
@@ -299,7 +289,7 @@ test.describe("Site Navigation Test with Steps", () => {
 
               if (imageValidation.brokenImages.length > 0) {
                 console.log(
-                  `Found ${imageValidation.brokenImages.length} broken images on "${item.text}"`,
+                  `Found ${imageValidation.brokenImages.length} broken images on "${item.text}"`
                 );
 
                 // Add broken images to global tracking with detailed context
@@ -315,9 +305,7 @@ test.describe("Site Navigation Test with Steps", () => {
                     error: brokenImg.error || `Status: ${brokenImg.statusCode}`,
                   };
                   // Add to global broken links map
-                  const existingLinks = globalBrokenLinks.get(pageUrl) || [];
-                  existingLinks.push(brokenLink);
-                  globalBrokenLinks.set(pageUrl, existingLinks);
+                  testState.addBrokenLink(pageUrl, brokenLink);
                   console.log(`  [${idx + 1}] ${brokenImg.src}`);
                   if (brokenImg.alt) {
                     console.log(`      Alt: "${brokenImg.alt}"`);
@@ -327,9 +315,7 @@ test.describe("Site Navigation Test with Steps", () => {
                   }
                 });
               } else if (imageValidation.validImages.length > 0) {
-                console.log(
-                  `All ${imageValidation.validImages.length} images loaded successfully`,
-                );
+                console.log(`All ${imageValidation.validImages.length} images loaded successfully`);
               } else {
                 console.log(`No images found on this page`);
               }
@@ -337,43 +323,32 @@ test.describe("Site Navigation Test with Steps", () => {
               // Process any download links found on this page
               if (pageDownloadLinks && pageDownloadLinks.length > 0) {
                 for (const downloadLink of pageDownloadLinks) {
-                  const downloadUrl = new URL(
-                    downloadLink.href,
-                    currentUrl,
-                  ).toString();
+                  const downloadUrl = new URL(downloadLink.href, currentUrl).toString();
 
                   // Skip if we've already processed this download
                   if (processedDownloads.has(downloadUrl)) {
-                    console.log(
-                      `⏭️ Skipping already processed download: ${downloadUrl}`,
-                    );
+                    console.log(`⏭️ Skipping already processed download: ${downloadUrl}`);
                     continue;
                   }
 
                   console.log(
-                    `📥 Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`,
+                    `📥 Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`
                   );
                   try {
                     // Verify the resource exists
-                    const { exists, contentLength } =
-                      await verifyResourceExists(downloadUrl);
+                    const { exists, contentLength } = await verifyResourceExists(downloadUrl);
                     if (exists) {
                       console.log(
-                        `Download resource ${downloadLink.text} exists and is accessible`,
+                        `Download resource ${downloadLink.text} exists and is accessible`
                       );
                       // Try to download the file
                       const downloadPath = path.join(
                         config.server.downloadsDir,
-                        path.basename(downloadLink.href),
+                        path.basename(downloadLink.href)
                       );
-                      const downloadSuccessful = await downloadFile(
-                        downloadUrl,
-                        downloadPath,
-                      );
+                      const downloadSuccessful = await downloadFile(downloadUrl, downloadPath);
                       if (downloadSuccessful) {
-                        console.log(
-                          `Successfully downloaded from page: ${downloadPath}`,
-                        );
+                        console.log(`Successfully downloaded from page: ${downloadPath}`);
                         // Get file size
                         const stats = fs.statSync(downloadPath);
                         console.log(`File size: ${formatFileSize(stats.size)}`);
@@ -391,21 +366,15 @@ test.describe("Site Navigation Test with Steps", () => {
                         processedDownloads.add(downloadUrl);
                       } else {
                         console.log(`Download failed for: ${downloadUrl}`);
-                        if (
-                          contentLength &&
-                          contentLength > config.allowedDownloads.maxFileSize
-                        ) {
+                        if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
                           console.log(
-                            `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
+                            `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
                           );
-                          fs.existsSync(downloadPath) &&
-                            fs.unlinkSync(downloadPath);
+                          fs.existsSync(downloadPath) && fs.unlinkSync(downloadPath);
                           const skippedDownload: SkippedDownload = {
                             from: startUrl,
                             to: downloadUrl,
-                            label: downloadLink.text
-                              .replace(/\s+/g, " ")
-                              .trim(),
+                            label: downloadLink.text.replace(/\s+/g, " ").trim(),
                             fileSize: contentLength,
                             reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
                           };
@@ -416,9 +385,7 @@ test.describe("Site Navigation Test with Steps", () => {
                           const skippedDownload: SkippedDownload = {
                             from: startUrl,
                             to: downloadUrl,
-                            label: downloadLink.text
-                              .replace(/\s+/g, " ")
-                              .trim(),
+                            label: downloadLink.text.replace(/\s+/g, " ").trim(),
                             fileSize: contentLength,
                             reason: "Download failed",
                           };
@@ -428,20 +395,18 @@ test.describe("Site Navigation Test with Steps", () => {
                         }
                       }
                     } else {
-                      console.log(
-                        `Download resource not accessible: ${downloadUrl}`,
-                      );
+                      console.log(`Download resource not accessible: ${downloadUrl}`);
                     }
                   } catch (error) {
                     console.log(
-                      `Error handling page download: ${error instanceof Error ? error.message : String(error)}`,
+                      `Error handling page download: ${error instanceof Error ? error.message : String(error)}`
                     );
                   }
                 }
               }
 
               // Return to the main page for the next navigation
-              await page.goto(config.server.baseUrl, { timeout: 30000 });
+              await page.goto(config.server.baseUrl, { timeout: TIMEOUTS.NAVIGATION });
               await page.waitForLoadState("domcontentloaded");
               await page.waitForTimeout(config.server.pauseBetweenClicks);
             } else {
@@ -449,7 +414,7 @@ test.describe("Site Navigation Test with Steps", () => {
             }
           } catch (error: unknown) {
             console.log(
-              `Error navigating to "${item.text}": ${error instanceof Error ? error.message : String(error)}`,
+              `Error navigating to "${item.text}": ${error instanceof Error ? error.message : String(error)}`
             );
           }
         }
@@ -464,12 +429,10 @@ test.describe("Site Navigation Test with Steps", () => {
       const regularPages = navigationPaths.filter((p) => !p.isDownloadable);
 
       // Count downloadable resources
-      const downloadableResources = navigationPaths.filter(
-        (p) => p.isDownloadable,
-      );
+      const downloadableResources = navigationPaths.filter((p) => p.isDownloadable);
 
       console.log(
-        `Total visited: ${navigationPaths.length} (${regularPages.length} pages + ${downloadableResources.length} downloadable resources)`,
+        `Total visited: ${navigationPaths.length} (${regularPages.length} pages + ${downloadableResources.length} downloadable resources)`
       );
 
       // List all navigable pages
@@ -484,9 +447,7 @@ test.describe("Site Navigation Test with Steps", () => {
         console.log("\n- Downloadable Resources:");
         downloadableResources.forEach((path, index) => {
           const cleanLabel = path.label.replace(/\s+/g, " ").trim();
-          console.log(
-            `${index + 1}. ${cleanLabel}: ${formatFileSize(path.fileSize || 0)}`,
-          );
+          console.log(`${index + 1}. ${cleanLabel}: ${formatFileSize(path.fileSize || 0)}`);
         });
       }
 
@@ -494,32 +455,27 @@ test.describe("Site Navigation Test with Steps", () => {
       const workingAssetCount = processedDownloads.size;
 
       // Add broken links summary if any were found
-      if (globalBrokenLinks.size > 0) {
-        let totalBroken = 0;
-        for (const links of globalBrokenLinks.values()) {
-          totalBroken += links.length;
-        }
+      if (testState.hasBrokenLinks()) {
+        const totalBroken = testState.getTotalBrokenLinksCount();
 
         console.log("\n- Broken Links Found:");
         console.log(
-          `  Total: ${totalBroken} broken link(s) detected out of ${globalValidatedLinksCount} tested`,
+          `  Total: ${totalBroken} broken link(s) detected out of ${testState.getValidatedLinksCount()} tested`
         );
 
-        for (const [pageUrl, links] of globalBrokenLinks) {
+        for (const [pageUrl, links] of testState.getBrokenLinks()) {
           const pageName = pageUrl.split("/").filter(Boolean).pop() || "home";
           console.log(`  - ${pageName} page: ${links.length} broken link(s)`);
         }
-        console.log(
-          "\n  See broken-links-reports/ directory for detailed report",
-        );
+        console.log("\n  See broken-links-reports/ directory for detailed report");
       } else {
         console.log("\n- Link Validation:");
 
         // Show total links validated including images, videos and downloads
         const totalValidated =
-          globalValidatedLinksCount + globalVideosValidated + workingAssetCount;
+          testState.getValidatedLinksCount() + testState.getVideosValidated() + workingAssetCount;
         const totalFound =
-          globalTotalLinksFound + globalVideosFound + workingAssetCount;
+          testState.getTotalLinksFound() + testState.getVideosFound() + workingAssetCount;
 
         if (totalValidated > 0) {
           console.log(`  All links are working correctly`);
@@ -527,30 +483,28 @@ test.describe("Site Navigation Test with Steps", () => {
           // Show total found vs validated
           if (totalFound > totalValidated) {
             console.log(
-              `  Successfully validated ${totalValidated} link(s) out of ${totalFound} found:`,
+              `  Successfully validated ${totalValidated} link(s) out of ${totalFound} found:`
             );
           } else {
-            console.log(
-              `  📊 Successfully validated ${totalValidated} link(s):`,
-            );
+            console.log(`  📊 Successfully validated ${totalValidated} link(s):`);
           }
 
-          if (globalValidatedLinksCount > 0) {
-            if (globalTotalLinksFound > globalValidatedLinksCount) {
+          if (testState.getValidatedLinksCount() > 0) {
+            if (testState.getTotalLinksFound() > testState.getValidatedLinksCount()) {
               console.log(
-                `     - Asset images: ${globalValidatedLinksCount} validated (${globalTotalLinksFound} total found)`,
+                `     - Asset images: ${testState.getValidatedLinksCount()} validated (${testState.getTotalLinksFound()} total found)`
               );
             } else {
-              console.log(`     - Asset images: ${globalValidatedLinksCount}`);
+              console.log(`     - Asset images: ${testState.getValidatedLinksCount()}`);
             }
           }
-          if (globalVideosValidated > 0) {
-            if (globalVideosFound > globalVideosValidated) {
+          if (testState.getVideosValidated() > 0) {
+            if (testState.getVideosFound() > testState.getVideosValidated()) {
               console.log(
-                `     - Videos: ${globalVideosValidated} validated (${globalVideosFound} total found)`,
+                `     - Videos: ${testState.getVideosValidated()} validated (${testState.getVideosFound()} total found)`
               );
             } else {
-              console.log(`     - Videos: ${globalVideosValidated}`);
+              console.log(`     - Videos: ${testState.getVideosValidated()}`);
             }
           }
           if (workingAssetCount > 0) {
@@ -566,21 +520,14 @@ test.describe("Site Navigation Test with Steps", () => {
         console.log("\n- Skipped Downloads:");
         skippedDownloads.forEach((item, index) => {
           const cleanLabel = item.label.replace(/\s+/g, " ").trim();
-          const sizeStr = item.fileSize
-            ? formatFileSize(item.fileSize)
-            : "Unknown size";
+          const sizeStr = item.fileSize ? formatFileSize(item.fileSize) : "Unknown size";
           const reason = item.reason || "Download failed";
-          console.log(
-            `${index + 1}. ${cleanLabel}: ${sizeStr} [SKIPPED: ${reason}]`,
-          );
+          console.log(`${index + 1}. ${cleanLabel}: ${sizeStr} [SKIPPED: ${reason}]`);
         });
       }
 
       // Export data for Elastic Synthetics
-      await exportElasticSyntheticsData(
-        navigationPaths,
-        config.server.syntheticsDir,
-      );
+      await exportElasticSyntheticsData(navigationPaths, config.server.syntheticsDir);
 
       // Create a visual sitemap
       await createVisualSitemap(navigationPaths, config.server.screenshotDir);
@@ -606,132 +553,102 @@ async function getElementCounts(page: Page): Promise<ElementCounts> {
 async function identifyNavigation(page: Page) {
   console.log("🔍 Analyzing navigation structure with enhanced detection...");
 
-  const navItems = await page.evaluate(() => {
-    const cleanText = (html: string | null): string => {
-      if (!html) return "";
-      return html
-        .replace(/<br\s*\/?>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    };
+  const navItems = await page.evaluate(
+    ({
+      navigationSelectors,
+      downloadableExtensions,
+    }: {
+      navigationSelectors: readonly string[];
+      downloadableExtensions: string[];
+    }) => {
+      const cleanText = (html: string | null): string => {
+        if (!html) return "";
+        return html
+          .replace(/<br\s*\/?>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      };
 
-    const items: Array<{
-      text: string;
-      href: string;
-      fullText: string;
-      isDownload: boolean;
-    }> = [];
+      const items: Array<{
+        text: string;
+        href: string;
+        fullText: string;
+        isDownload: boolean;
+      }> = [];
 
-    const navSelectors = [
-      // Standard navigation
-      "nav a",
-      "header a",
-      ".menu a",
-      ".navbar a",
-      ".navigation a",
-      '[role="navigation"] a',
-      ".main-menu a",
-      ".site-nav a",
+      const navSelectors = navigationSelectors;
 
-      // Press kit specific selectors
-      ".press-kit-nav a",
-      ".presskit-nav a",
-      ".pk-nav a",
+      // Try each selector
+      for (const selector of navSelectors) {
+        const links = document.querySelectorAll(selector);
 
-      // Tommy Hilfiger specific patterns
-      'a[href*=".html"]', // Page links
-      'a[href*=".pdf"]', // PDF downloads
-      'a[href*=".zip"]', // ZIP downloads
-      'a[href*="/assets/"]', // Asset downloads
-      'a[href*="/files/"]', // File downloads
-      'a[href*="download"]', // Download links
-      'a[href*="product.zip"]', // Specific product ZIP
-      'a[href*="stills.zip"]', // Stills ZIP
-      'a[href*="images.zip"]', // Images ZIP
+        for (const link of links) {
+          const href = link.getAttribute("href");
+          if (
+            !href ||
+            href === "#" ||
+            href.startsWith("javascript:") ||
+            href.startsWith("mailto:") ||
+            href.startsWith("tel:")
+          ) {
+            continue;
+          }
 
-      // Generic content links
-      "main a",
-      ".content a",
-      ".container a",
+          // Get text content, handling nested elements
+          let text = "";
+          let fullText = "";
 
-      // Footer links (often contain downloads)
-      "footer a",
-    ];
+          if (link.children.length > 0) {
+            // Handle nested elements
+            const childTexts = Array.from(link.children)
+              .map((child) => cleanText(child.textContent))
+              .filter(Boolean);
 
-    // Try each selector
-    for (const selector of navSelectors) {
-      const links = document.querySelectorAll(selector);
+            text = childTexts[0] || cleanText(link.textContent);
+            fullText = childTexts.join(" ").trim() || text;
+          } else {
+            text = cleanText(link.textContent);
+            fullText = text;
+          }
 
-      for (const link of links) {
-        const href = link.getAttribute("href");
-        if (
-          !href ||
-          href === "#" ||
-          href.startsWith("javascript:") ||
-          href.startsWith("mailto:") ||
-          href.startsWith("tel:")
-        ) {
-          continue;
-        }
+          if (!text) continue;
 
-        // Get text content, handling nested elements
-        let text = "";
-        let fullText = "";
+          // Better download detection that handles assets pages correctly**
+          const extension = href.split(".").pop()?.toLowerCase() || "";
+          const hasFileExtension = downloadableExtensions.includes(extension);
 
-        if (link.children.length > 0) {
-          // Handle nested elements
-          const childTexts = Array.from(link.children)
-            .map((child) => cleanText(child.textContent))
-            .filter(Boolean);
+          // Smart assets directory detection**
+          const isAssetsDirectory =
+            (href.endsWith("/assets/") || href.endsWith("/assets")) && !hasFileExtension; // No file extension = directory, not file
 
-          text = childTexts[0] || cleanText(link.textContent);
-          fullText = childTexts.join(" ").trim() || text;
-        } else {
-          text = cleanText(link.textContent);
-          fullText = text;
-        }
+          // Skip assets directories - they're pages, not downloads
+          if (isAssetsDirectory) {
+            const isDownload = false;
 
-        if (!text) continue;
+            // Check if this link is already in our list
+            if (!items.some((item) => item.href === href)) {
+              items.push({
+                text,
+                href: href as string,
+                fullText,
+                isDownload,
+              });
+            }
+            continue;
+          }
 
-        // Better download detection that handles assets pages correctly**
-        const extension = href.split(".").pop()?.toLowerCase() || "";
-        const hasFileExtension = [
-          "pdf",
-          "zip",
-          "rar",
-          "7z",
-          "doc",
-          "docx",
-          "xls",
-          "xlsx",
-          "csv",
-          "txt",
-          "jpg",
-          "jpeg",
-          "png",
-          "gif",
-          "webp",
-          "svg",
-          "mp4",
-          "mov",
-          "avi",
-          "wmv",
-          "mp3",
-          "wav",
-          "psd",
-          "ai",
-          "eps",
-          "indd",
-        ].includes(extension);
-
-        // Smart assets directory detection**
-        const isAssetsDirectory =
-          (href.endsWith("/assets/") || href.endsWith("/assets")) &&
-          !hasFileExtension; // No file extension = directory, not file
-
-        // Skip assets directories - they're pages, not downloads
-        if (isAssetsDirectory) {
-          const isDownload = false;
+          // Proper download detection**
+          const isDownload =
+            hasFileExtension ||
+            href.includes("/download") ||
+            href.includes("/files/") ||
+            href.includes("/media/") ||
+            href.includes("product.zip") ||
+            href.includes("stills.zip") ||
+            href.includes("images.zip") ||
+            href.includes("media.zip") ||
+            text.toLowerCase().includes("download") ||
+            (href.toLowerCase().includes("assets") && hasFileExtension);
 
           // Check if this link is already in our list
           if (!items.some((item) => item.href === href)) {
@@ -742,67 +659,45 @@ async function identifyNavigation(page: Page) {
               isDownload,
             });
           }
-          continue;
-        }
-
-        // Proper download detection**
-        const isDownload =
-          hasFileExtension ||
-          href.includes("/download") ||
-          href.includes("/files/") ||
-          href.includes("/media/") ||
-          href.includes("product.zip") ||
-          href.includes("stills.zip") ||
-          href.includes("images.zip") ||
-          href.includes("media.zip") ||
-          text.toLowerCase().includes("download") ||
-          (href.toLowerCase().includes("assets") && hasFileExtension);
-
-        // Check if this link is already in our list
-        if (!items.some((item) => item.href === href)) {
-          items.push({
-            text,
-            href: href as string,
-            fullText,
-            isDownload,
-          });
         }
       }
-    }
 
-    // Check for hidden download links that may be revealed on hover
-    const potentialDownloads = document.querySelectorAll(
-      "[data-download], [data-file], .download-link, .download-btn",
-    );
-    for (const element of potentialDownloads) {
-      const href =
-        element.getAttribute("href") ||
-        element.getAttribute("data-href") ||
-        element.getAttribute("data-url");
+      // Check for hidden download links that may be revealed on hover
+      const potentialDownloads = document.querySelectorAll(
+        "[data-download], [data-file], .download-link, .download-btn"
+      );
+      for (const element of potentialDownloads) {
+        const href =
+          element.getAttribute("href") ||
+          element.getAttribute("data-href") ||
+          element.getAttribute("data-url");
 
-      if (href) {
-        const text = element.textContent?.trim() || "Download";
-        if (!items.some((item) => item.href === href)) {
-          items.push({
-            text,
-            href,
-            fullText: text,
-            isDownload: true,
-          });
+        if (href) {
+          const text = element.textContent?.trim() || DEFAULT_TEXT.DOWNLOAD_FALLBACK;
+          if (!items.some((item) => item.href === href)) {
+            items.push({
+              text,
+              href,
+              fullText: text,
+              isDownload: true,
+            });
+          }
         }
       }
-    }
 
-    console.log(
-      `Found ${items.length} navigation items with enhanced detection`,
-    );
-    return items;
-  });
+      console.log(`Found ${items.length} navigation items with enhanced detection`);
+      return items;
+    },
+    {
+      navigationSelectors: NAVIGATION_SELECTORS,
+      downloadableExtensions: DOWNLOADABLE_EXTENSIONS.map((ext) => ext.slice(1)),
+    }
+  );
 
   // Rest of the function remains the same...
   if (navItems.length === 0) {
     console.log(
-      " No navigation items found with enhanced selectors, trying comprehensive fallback...",
+      " No navigation items found with enhanced selectors, trying comprehensive fallback..."
     );
 
     // Your existing fallback logic here...
@@ -815,10 +710,8 @@ async function identifyNavigation(page: Page) {
 // Wait for page content to fully load including lazy-loaded elements
 async function checkPageSpecificElements(
   page: Page,
-  pageName: string,
-): Promise<
-  Array<{ text: string; href: string; fullText: string; isDownload: boolean }>
-> {
+  pageName: string
+): Promise<Array<{ text: string; href: string; fullText: string; isDownload: boolean }>> {
   return await test.step(`Check ${pageName} page elements`, async () => {
     // Scroll to trigger lazy loading of images and assets
     await page.evaluate(async () => {
@@ -827,9 +720,7 @@ async function checkPageSpecificElements(
         const viewportHeight = window.innerHeight;
         const totalSteps = Math.ceil(scrollHeight / viewportHeight);
 
-        console.log(
-          `📜 Starting enhanced scroll: ${totalSteps} steps for lazy loading`,
-        );
+        console.log(`📜 Starting enhanced scroll: ${totalSteps} steps for lazy loading`);
 
         for (let step = 0; step < totalSteps; step++) {
           const scrollTo = step * viewportHeight;
@@ -840,12 +731,10 @@ async function checkPageSpecificElements(
 
           // Check for new images that might have loaded
           const newImages = document.querySelectorAll(
-            'img[loading="lazy"], img[data-src], img[src*="nextImageExportOptimizer"]',
+            'img[loading="lazy"], img[data-src], img[src*="nextImageExportOptimizer"]'
           );
           if (newImages.length > 0) {
-            console.log(
-              ` Found ${newImages.length} lazy images at scroll position ${scrollTo}`,
-            );
+            console.log(` Found ${newImages.length} lazy images at scroll position ${scrollTo}`);
           }
         }
 
@@ -866,9 +755,7 @@ async function checkPageSpecificElements(
 
     // Common elements to check
     const elementCounts = await getElementCounts(page);
-    console.log(
-      ` Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`,
-    );
+    console.log(` Page "${pageName}" contains: ${JSON.stringify(elementCounts)}`);
 
     // Wait for page-specific content indicators to ensure full load
     const pageNameLower = pageName.toLowerCase();
@@ -878,24 +765,20 @@ async function checkPageSpecificElements(
       pageNameLower.includes("about") ||
       pageNameLower.includes("tommy")
     ) {
-      const bioElements = await page
-        .locator("article, .bio, .biography, .about, .profile")
-        .count();
+      const bioElements = await page.locator("article, .bio, .biography, .about, .profile").count();
       const textBlocks = await page.locator("p, .text, .content").count();
       console.log(
-        `👤 Biography page elements: ${bioElements} bio sections, ${textBlocks} text blocks`,
+        `👤 Biography page elements: ${bioElements} bio sections, ${textBlocks} text blocks`
       );
     } else if (pageNameLower.includes("contact")) {
       const contactElements = await page
         .locator('form, [type="email"], [type="tel"], address, .contact')
         .count();
       const socialLinks = await page
-        .locator(
-          'a[href*="instagram"], a[href*="twitter"], a[href*="facebook"]',
-        )
+        .locator('a[href*="instagram"], a[href*="twitter"], a[href*="facebook"]')
         .count();
       console.log(
-        `📞 Contact page elements: ${contactElements} contact forms, ${socialLinks} social links`,
+        `📞 Contact page elements: ${contactElements} contact forms, ${socialLinks} social links`
       );
     } else if (
       pageNameLower.includes("asset") ||
@@ -904,9 +787,7 @@ async function checkPageSpecificElements(
       pageNameLower.includes("gallery") ||
       pageNameLower.includes("stills")
     ) {
-      const galleryElements = await page
-        .locator(".gallery, .grid, .assets, .media-grid")
-        .count();
+      const galleryElements = await page.locator(".gallery, .grid, .assets, .media-grid").count();
       const downloadLinks = await page
         .locator('a[href*=".zip"], a[href*="download"], .download')
         .count();
@@ -922,57 +803,45 @@ async function checkPageSpecificElements(
       // Check for high-resolution image links
       const hiResImages = await page
         .locator(
-          'img[src*="7016w"], img[src*="3360w"], img[src*="_high"], img[src*="_large"], img[src*="nextImageExportOptimizer"]',
+          'img[src*="7016w"], img[src*="3360w"], img[src*="_high"], img[src*="_large"], img[src*="nextImageExportOptimizer"]'
         )
         .count();
       console.log(`   - High-res/optimized images: ${hiResImages}`);
 
       // Return empty array if validation is disabled
       return [];
-    } else if (
-      pageNameLower.includes("press") ||
-      pageNameLower.includes("release")
-    ) {
-      const pressElements = await page
-        .locator(".press, .release, .news, article")
-        .count();
+    } else if (pageNameLower.includes("press") || pageNameLower.includes("release")) {
+      const pressElements = await page.locator(".press, .release, .news, article").count();
       const pdfLinks = await page.locator('a[href*=".pdf"]').count();
       console.log(
-        `📰 Press page elements: ${pressElements} press sections, ${pdfLinks} PDF downloads`,
+        `📰 Press page elements: ${pressElements} press sections, ${pdfLinks} PDF downloads`
       );
     } else if (pageNameLower.includes("video")) {
       const videoElements = await page
         .locator('video, iframe[src*="youtube"], iframe[src*="vimeo"], .video')
         .count();
-      const videoDownloads = await page
-        .locator('a[href*=".mp4"], a[href*=".mov"]')
-        .count();
+      const videoDownloads = await page.locator('a[href*=".mp4"], a[href*=".mov"]').count();
       console.log(
-        `🎥 Video page elements: ${videoElements} video players, ${videoDownloads} video downloads`,
+        `🎥 Video page elements: ${videoElements} video players, ${videoDownloads} video downloads`
       );
     } else if (pageNameLower.includes("aleali")) {
-      const profileElements = await page
-        .locator(".profile, .bio, .about, article")
-        .count();
+      const profileElements = await page.locator(".profile, .bio, .about, article").count();
       const imageElements = await page.locator("img").count();
       console.log(
-        `👩 Aleali May page elements: ${profileElements} profile sections, ${imageElements} images`,
+        `👩 Aleali May page elements: ${profileElements} profile sections, ${imageElements} images`
       );
     }
 
     // Check for missing critical elements
-    const hasMissingElements = await page.evaluate(() => {
-      const criticalSelectors = ["h1", "main", ".content", ".container"];
+    const hasMissingElements = await page.evaluate((criticalSelectors) => {
       const missingElements = criticalSelectors.filter(
-        (selector) => document.querySelectorAll(selector).length === 0,
+        (selector) => document.querySelectorAll(selector).length === 0
       );
       return missingElements;
-    });
+    }, CRITICAL_SELECTORS);
 
     if (hasMissingElements.length > 0) {
-      console.log(
-        `Missing critical elements: ${hasMissingElements.join(", ")}`,
-      );
+      console.log(`Missing critical elements: ${hasMissingElements.join(", ")}`);
     }
 
     // For asset pages, we've already handled this in validateAssetImages
@@ -1004,7 +873,7 @@ async function createVisualSitemap(
     fileSize?: number;
     elementCounts?: any;
   }>,
-  outputDir: string,
+  outputDir: string
 ) {
   // Regular pages and downloadable resources
   const regularPages = paths.filter((p) => !p.isDownloadable);
@@ -1046,11 +915,11 @@ async function createVisualSitemap(
               ${path.elementCounts ? `<div class="element-counts">Elements: ${JSON.stringify(path.elementCounts)}</div>` : ""}
               <img class="screenshot" src="${path.label.replace(/\s+/g, "-").toLowerCase()}.png" onerror="this.style.display='none'" />
             </div>
-          `,
+          `
             )
             .join("")}
         </div>
-      `,
+      `
         )
         .join("")}
     </div>
@@ -1068,7 +937,7 @@ async function createVisualSitemap(
             <br>
             <a href="${download.to}" target="_blank">${download.to}</a>
           </div>
-        `,
+        `
           )
           .join("")}
       </div>
@@ -1080,9 +949,7 @@ async function createVisualSitemap(
   `;
 
   fs.writeFileSync(path.join(outputDir, "sitemap.html"), sitemapHtml);
-  console.log(
-    `Created visual sitemap at: ${path.join(outputDir, "sitemap.html")}`,
-  );
+  console.log(`Created visual sitemap at: ${path.join(outputDir, "sitemap.html")}`);
 }
 
 async function exportElasticSyntheticsData(
@@ -1095,7 +962,7 @@ async function exportElasticSyntheticsData(
     elementCounts?: any;
     fullText?: string;
   }>,
-  _outputDir: string,
+  _outputDir: string
 ) {
   // Get only regular pages (not downloadable resources)
   const regularPages = navigationPaths.filter((p) => !p.isDownloadable);
@@ -1122,800 +989,24 @@ async function exportElasticSyntheticsData(
   // Save as JSON in the synthetics directory
   fs.writeFileSync(
     path.join(config.server.syntheticsDir, "synthetics-data.json"),
-    JSON.stringify(syntheticsData, null, 2),
+    JSON.stringify(syntheticsData, null, 2)
   );
 
   // Generate and save Elastic Synthetics test file with correct name
   const testCode = generateElasticSyntheticsTest(syntheticsData);
   const _siteId =
-    new URL(config.server.baseUrl).pathname.split("/").filter(Boolean).pop() ||
-    "site";
+    new URL(config.server.baseUrl).pathname.split("/").filter(Boolean).pop() || "site";
   const fileName = `core.journey.ts`;
   const filePath = path.join(config.server.syntheticsDir, fileName);
 
   fs.writeFileSync(filePath, testCode);
 
   console.log(
-    `Exported Elastic Synthetics data to: ${path.join(config.server.syntheticsDir, "synthetics-data.json")}`,
+    `Exported Elastic Synthetics data to: ${path.join(config.server.syntheticsDir, "synthetics-data.json")}`
   );
   console.log(`Generated Elastic Synthetics test at: ${filePath}`);
 
   return syntheticsData;
-}
-
-function generateElasticSyntheticsTest(data: {
-  baseUrl: string;
-  pages: Array<{
-    label: string;
-    url: string;
-    sourceUrl: string;
-    elementCounts: Record<string, number>;
-    fullText?: string;
-    href: string;
-  }>;
-  timestamp: string;
-}): string {
-  // Extract site identifier from the baseUrl
-  const urlPath = new URL(data.baseUrl).pathname;
-  const siteId = urlPath.split("/").filter(Boolean).pop() || "site";
-
-  // Generate tags array
-  const tags = [
-    config.server.environment,
-    config.server.department,
-    config.server.domain,
-    config.server.service,
-    siteId,
-  ].filter(Boolean);
-
-  // Format monitor name according to convention
-  const monitorName = `${config.server.departmentShort} - ${config.server.journeyType} Journey | ${siteId} (core) - prd`;
-
-  // Format monitor ID
-  const monitorId = `${config.server.journeyType}_${siteId.replace(/[^a-zA-Z0-9]/g, "_")}`;
-
-  // Start building the enhanced test code
-  let code = `/* ${config.server.domain}/${config.server.service}/${siteId}/core.journey.ts */
-
-import {journey, monitor, step} from '@elastic/synthetics';
-
-// TypeScript interfaces for type validation
-interface PageLoadOptions {
-  timeout?: number;
-  imageTimeout?: number;
-  networkIdleTimeout?: number;
-}
-
-interface PerformanceMetrics {
-  navigationTiming?: any;
-  paintTiming?: any[];
-  lcp?: any;
-  cls?: any;
-  longTasks?: any[];
-}
-
-journey('${monitorName}', async ({ page }) => {
-    monitor.use({
-        id: '${monitorId}',
-        schedule: 30,
-        screenshot: 'on',
-        throttling: false,
-        tags: ${JSON.stringify(tags)}
-    });
-
-    const baseUrl = '${data.baseUrl}';
-
-    // Update the waitForFullPageLoad function with performance metrics
-    const waitForFullPageLoad = async (pageType = 'default', options: PageLoadOptions = {}) => {
-        // Apply default values and basic validation
-        const timeout = Math.min(Math.max(options.timeout || 10000, 1000), 60000);
-        const imageTimeout = Math.min(Math.max(options.imageTimeout || 3000, 1000), 30000);
-        const networkIdleTimeout = Math.min(Math.max(options.networkIdleTimeout || 1000, 500), 10000);
-
-        const startTime = Date.now();
-        console.log(\` Enhanced page load starting for \${pageType}...\`);
-
-        try {
-            // STEP 1: Essential DOM loading (CRITICAL)
-            await Promise.race([
-                page.waitForLoadState('domcontentloaded', { timeout: 5000 }),
-                page.waitForTimeout(5000)
-            ]);
-            console.log(\` DOM ready: \${Date.now() - startTime}ms\`);
-
-            // STEP 2: Wait for body visibility and content (PREVENTS BLANK SCREENSHOTS)
-            await Promise.race([
-                page.waitForSelector('body', { state: 'visible', timeout: 3000 }),
-                page.waitForTimeout(3000)
-            ]);
-
-            // Enhanced content verification with retry logic
-            let hasContent = false;
-            let retryCount = 0;
-            const maxRetries = 3;
-
-            while (!hasContent && retryCount < maxRetries) {
-                hasContent = await page.evaluate(() => {
-                    const body = document.body;
-                    // More lenient content check
-                    return body && (
-                        body.textContent?.trim().length > 0 ||
-                        body.children.length > 0 ||
-                        body.innerHTML.length > 0
-                    );
-                });
-
-                if (!hasContent) {
-                    retryCount++;
-                    if (retryCount < maxRetries) {
-                        console.log(\` Content check attempt \${retryCount} failed, retrying...\`);
-                        await page.waitForTimeout(1000); // Wait before retry
-                    }
-                }
-            }
-
-            if (!hasContent) {
-                // Check if we're in a back navigation state
-                const isBackNavigation = await page.evaluate(() => {
-                    return window.performance.navigation.type === 2 || // Back/Forward navigation
-                           window.performance.getEntriesByType('navigation')[0]?.type === 'back_forward';
-                });
-
-                if (isBackNavigation) {
-                    console.log(' Back navigation detected, proceeding with reduced content check');
-                    // For back navigation, we'll proceed even with minimal content
-                    hasContent = true;
-                } else {
-                    throw new Error('Page appears to be empty after multiple retries');
-                }
-            }
-
-            console.log(\` Body visible with content: \${Date.now() - startTime}ms\`);
-
-            // STEP 3: CRITICAL IMAGE LOADING (OPTIMIZED)
-            const imagesLoaded = await waitForCriticalImages(imageTimeout);
-            if (!imagesLoaded) {
-                console.log(' Some images may not be fully loaded');
-            }
-
-            // STEP 4: Navigation elements (OPTIMIZED)
-            const navigationLoaded = await waitForNavigation();
-            if (!navigationLoaded) {
-                console.log(' Navigation elements may not be fully loaded');
-            }
-
-            // STEP 5: Network stability check (OPTIMIZED)
-            try {
-                await Promise.race([
-                    page.waitForLoadState('networkidle', { timeout: networkIdleTimeout }),
-                    page.waitForTimeout(networkIdleTimeout)
-                ]);
-                console.log(\` Network stable: \${Date.now() - startTime}ms\`);
-            } catch (e) {
-                console.log(' Network still active, continuing...');
-            }
-
-            // STEP 6: Final page load verification
-            const pageLoadStatus = await page.evaluate(() => {
-                // Check if page is interactive
-                const isInteractive = document.readyState === 'complete' ||
-                                    document.readyState === 'interactive';
-
-                // Check for any loading indicators
-                const loadingIndicators = document.querySelectorAll('.loading, .spinner, [aria-busy="true"]');
-                const isLoading = loadingIndicators.length > 0;
-
-                // More specific error message detection
-                const errorMessages = document.querySelectorAll([
-                    // Only actual error messages
-                    '.error-message:not(h1):not(h2):not(h3):not([role="heading"])',
-                    '.error-text:not(h1):not(h2):not(h3):not([role="heading"])',
-                    '.alert-error:not(h1):not(h2):not(h3):not([role="heading"])',
-                    // Only alert roles that are not headings and contain error text
-                    '[role="alert"]:not(h1):not(h2):not(h3):not([role="heading"]):not([aria-hidden="true"])',
-                    // Error states in forms
-                    'form .error:not([role="heading"])',
-                    'form .invalid:not([role="heading"])',
-                    // Error messages in modals
-                    '.modal .error:not([role="heading"])',
-                    '.modal .alert-error:not([role="heading"])',
-                    // Error messages in notifications
-                    '.notification.error:not([role="heading"])',
-                    '.toast.error:not([role="heading"])'
-                ].join(','));
-
-                // Filter out hidden error messages and non-error elements
-                const visibleErrors = Array.from(errorMessages).filter(el => {
-                    const style = window.getComputedStyle(el);
-                    const isVisible = style.display !== 'none' &&
-                                     style.visibility !== 'hidden' &&
-                                     style.opacity !== '0';
-
-                    // Ignore elements that are likely not errors
-                    const isNotError = el.tagName.toLowerCase().startsWith('h') ||
-                                     el.getAttribute('role') === 'heading' ||
-                                     el.textContent?.includes('|') ||
-                                     el.textContent?.includes('Collection') ||
-                                     el.textContent?.includes('Tommy') ||
-                                     el.textContent?.includes('Hilfiger');
-
-                    // Only include elements that look like actual errors
-                    const looksLikeError = el.textContent?.toLowerCase().includes('error') ||
-                                         el.textContent?.toLowerCase().includes('failed') ||
-                                         el.textContent?.toLowerCase().includes('invalid') ||
-                                         el.textContent?.toLowerCase().includes('not found');
-
-                    return isVisible && !isNotError && looksLikeError;
-                });
-
-                const hasErrors = visibleErrors.length > 0;
-
-                // Get error details for logging
-                const errorDetails = visibleErrors.map(el => ({
-                    text: el.textContent?.trim(),
-                    type: el.getAttribute('role') || el.className,
-                    visible: true
-                }));
-
-                // Get performance metrics without validation
-                const performanceMetrics = {
-                    navigationTiming: performance.getEntriesByType('navigation')[0],
-                    paintTiming: performance.getEntriesByType('paint'),
-                    lcp: performance.getEntriesByType('largest-contentful-paint')[0],
-                    cls: performance.getEntriesByType('layout-shift')[0],
-                    longTasks: performance.getEntriesByType('longtask')
-                };
-
-                return {
-                    isInteractive,
-                    isLoading,
-                    hasErrors,
-                    errorDetails,
-                    readyState: document.readyState,
-                    performanceMetrics
-                };
-            });
-
-            // Log performance metrics (basic validation)
-            if (pageLoadStatus.performanceMetrics) {
-                console.log(' Performance metrics collected successfully');
-            } else {
-                console.log(' Performance metrics not available');
-            }
-
-            if (!pageLoadStatus.isInteractive) {
-                throw new Error(\`Page not interactive, readyState: \${pageLoadStatus.readyState}\`);
-            }
-
-            if (pageLoadStatus.isLoading) {
-                console.log(' Page still shows loading indicators');
-            }
-
-            if (pageLoadStatus.hasErrors) {
-                console.log(' Page contains error messages:');
-                pageLoadStatus.errorDetails.forEach(error => {
-                    console.log(\`   - \${error.text} (\${error.type})\`);
-                });
-            }
-
-            // STEP 7: Final render wait (REDUCED)
-            await page.waitForTimeout(500);
-
-            console.log(\` Total load time: \${Date.now() - startTime}ms\`);
-            return true;
-
-        } catch (error) {
-            console.log(\` Page load error: \${error.message}\`);
-            return false;
-        }
-    };
-
-    // CRITICAL IMAGE LOADING FIX (OPTIMIZED)
-    const waitForCriticalImages = async (timeout = 3000) => {
-        const startTime = Date.now();
-
-        try {
-            // Wait for images to appear in DOM
-            const imageCount = await page.locator('img').count();
-            console.log(\`Found \${imageCount} images\`);
-
-            if (imageCount === 0) {
-                console.log(' No images to load');
-                return true;
-            }
-
-            // Wait for at least one image to be visible
-            await Promise.race([
-                page.waitForSelector('img', { state: 'visible', timeout: 2000 }),
-                page.waitForTimeout(2000)
-            ]);
-
-            // Improved scrolling implementation
-            await page.evaluate(async () => {
-                const scrollToBottom = async () => {
-                    const scrollHeight = document.documentElement.scrollHeight;
-                    const viewportHeight = window.innerHeight;
-                    const totalSteps = Math.ceil(scrollHeight / viewportHeight);
-
-                    for (let step = 0; step < totalSteps; step++) {
-                        const scrollTo = step * viewportHeight;
-                        window.scrollTo(0, scrollTo);
-                        // Wait for any lazy loading to trigger
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-
-                    // Final scroll to bottom
-                    window.scrollTo(0, scrollHeight);
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // Scroll back to top
-                    window.scrollTo(0, 0);
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                };
-
-                await scrollToBottom();
-            });
-
-            // Optimized image loading detection
-            const imageLoadResult = await Promise.race([
-                // Strategy 1: Wait for all images to load
-                page.waitForFunction(
-                    () => {
-                        const images = Array.from(document.querySelectorAll('img'));
-                        if (images.length === 0) return true;
-
-                        // Check all images, not just visible ones
-                        const loadedImages = images.filter(img => {
-                            return img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
-                        });
-
-                        const loadRatio = loadedImages.length / images.length;
-
-                        // Require 80% of all images to be loaded
-                        return loadRatio >= 0.8;
-                    },
-                    { timeout: timeout }
-                ),
-
-                // Strategy 2: Timeout fallback
-                page.waitForTimeout(timeout).then(() => {
-                    console.log(' Image loading timeout reached');
-                    return true;
-                })
-            ]);
-
-            // Verify image dimensions and log loading status
-            const imageStatus = await page.evaluate(() => {
-                const images = Array.from(document.querySelectorAll('img'));
-                return images.map(img => ({
-                    width: img.naturalWidth,
-                    height: img.naturalHeight,
-                    complete: img.complete,
-                    src: img.src,
-                    visible: img.getBoundingClientRect().width > 0 &&
-                            img.getBoundingClientRect().height > 0,
-                    position: {
-                        top: img.getBoundingClientRect().top,
-                        bottom: img.getBoundingClientRect().bottom,
-                        left: img.getBoundingClientRect().left,
-                        right: img.getBoundingClientRect().right
-                    }
-                }));
-            });
-
-            const validImages = imageStatus.filter(img => img.width > 0 && img.height > 0);
-            const visibleImages = imageStatus.filter(img => img.visible);
-            const loadedVisibleImages = visibleImages.filter(img => img.complete);
-
-            console.log(\`Image loading status:\`);
-            console.log(\`   - Total images: \${imageCount}\`);
-            console.log(\`   - Valid images: \${validImages.length}/\${imageCount}\`);
-            console.log(\`   - Visible images: \${visibleImages.length}/\${imageCount}\`);
-            console.log(\`   - Loaded visible images: \${loadedVisibleImages.length}/\${visibleImages.length}\`);
-
-            if (loadedVisibleImages.length < visibleImages.length) {
-                console.log(' Some visible images failed to load:');
-                visibleImages
-                    .filter(img => !img.complete)
-                    .forEach(img => {
-                        console.log(\`   - \${img.src}\`);
-                        console.log(\`     Position: top=\${img.position.top}, bottom=\${img.position.bottom}\`);
-                    });
-            }
-
-            console.log(\`Images processed in \${Date.now() - startTime}ms\`);
-            return validImages.length > 0;
-
-        } catch (error) {
-            console.log(\`Image loading error: \${error.message}\`);
-            return false;
-        }
-    };
-
-    // NAVIGATION ELEMENT LOADING
-    const waitForNavigation = async () => {
-        try {
-            const navSelectors = [
-                'nav',
-                '.menu',
-                '.navigation',
-                'header nav',
-                '[role="navigation"]',
-                'a[href]:not([href="#"])'
-            ];
-
-            for (const selector of navSelectors) {
-                const count = await page.locator(selector).count();
-                if (count > 0) {
-                    await Promise.race([
-                        page.waitForSelector(selector, { state: 'visible', timeout: 3000 }),
-                        page.waitForTimeout(3000)
-                    ]);
-                    console.log(\` Navigation loaded: \${selector}\`);
-                    return true;
-                }
-            }
-
-            console.log(' No navigation elements found');
-            return false;
-
-        } catch (e) {
-            console.log(' Navigation loading timeout');
-            return false;
-        }
-    };
-
-    // Page type configurations for different timeout strategies
-    const getPageConfig = (pageType: string): PageLoadOptions => {
-        const configs: Record<string, PageLoadOptions> = {
-            homepage: {
-                timeout: 10000,
-                imageTimeout: 3000,
-                networkIdleTimeout: 1000
-            },
-            bio: {
-                timeout: 8000,
-                imageTimeout: 2000,
-                networkIdleTimeout: 1000
-            },
-            assets: {
-                timeout: 12000,
-                imageTimeout: 4000,
-                networkIdleTimeout: 1000
-            },
-            default: {
-                timeout: 8000,
-                imageTimeout: 3000,
-                networkIdleTimeout: 1000
-            }
-        };
-
-        return configs[pageType] || configs.default;
-    };
-
-    // Enhanced step wrapper with error handling
-    const enhancedStep = async (stepName: string, pageType: string, action: () => Promise<void>) => {
-        const startTime = Date.now();
-        console.log(\` Starting: \${stepName}\`);
-
-        try {
-            // Execute the action
-            await action();
-
-            // Apply appropriate waiting strategy based on page type
-            const config = getPageConfig(pageType);
-            const success = await waitForFullPageLoad(pageType, config);
-
-            if (success) {
-                console.log(\` \${stepName} completed in \${Date.now() - startTime}ms\`);
-            } else {
-                console.log(\` \${stepName} completed with warnings in \${Date.now() - startTime}ms\`);
-            }
-
-        } catch (error) {
-            console.log(\` \${stepName} failed: \${error.message}\`);
-
-            // Don't fail the entire journey for navigation issues
-            if (error.message.includes('timeout') || error.message.includes('navigation')) {
-                console.log(\` Continuing journey despite \${stepName} failure\`);
-            } else {
-                throw error;
-            }
-        }
-    };
-
-    // HOMEPAGE STEP
-    step('Go to homepage', async () => {
-        await enhancedStep('Go to homepage', 'homepage', async () => {
-            await page.goto(baseUrl, {
-                waitUntil: 'domcontentloaded',
-                timeout: 15000
-            });
-        });
-    });
-`;
-
-  // Process each navigation item with enhanced logic
-  data.pages.forEach((page, index) => {
-    // Skip the homepage if it's the first page and matches baseUrl
-    if (page.url === data.baseUrl && index === 0) {
-      return;
-    }
-
-    // Determine page type based on URL/label for appropriate timeouts
-    let pageType = "default";
-    const label = page.label.toLowerCase();
-    if (label.includes("bio") || label.includes("about")) {
-      pageType = "bio";
-    } else if (
-      label.includes("asset") ||
-      label.includes("media") ||
-      label.includes("gallery")
-    ) {
-      pageType = "assets";
-    } else if (label.includes("press") || label.includes("release")) {
-      pageType = "default";
-    }
-
-    // Escape special characters in the page label and href
-    const escapedLabel = page.label.replace(/"/g, '\\"');
-    const escapedHref = page.href.replace(/"/g, '\\"');
-
-    code += `
-    step('Navigate to "${escapedLabel}"', async () => {
-        await enhancedStep('Navigate to "${escapedLabel}"', '${pageType}', async () => {
-            try {
-                // Multiple selection strategies for robust navigation
-                const selectors = [
-                    'a[href*="' + '${escapedHref.replace(/^\.\//, "")}' + '"]',
-                    'nav a:has-text("${escapedLabel}")',
-                    'a:has-text("${escapedLabel}")',
-                    'a[href="' + '${escapedHref}' + '"]'
-                ];
-
-                let clicked = false;
-                for (const selector of selectors) {
-                    try {
-                        const element = page.locator(selector).first();
-                        const count = await element.count();
-                        if (count > 0) {
-                            await element.click();
-                            clicked = true;
-                            console.log(\` Clicked using selector: \${selector}\`);
-                            break;
-                        }
-                    } catch (e) {
-                        console.log(\` Selector failed: \${selector} - \${e.message}\`);
-                        continue;
-                    }
-                }
-
-                if (!clicked) {
-                    throw new Error('Could not find clickable element for ${escapedLabel}');
-                }
-
-            } catch (e) {
-                console.log(' Falling back to direct navigation for ${escapedLabel}');
-                await page.goto('${page.url}', {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 20000
-                });
-            }
-        });
-    });
-
-    step('Validate images on "${escapedLabel}" page', async () => {
-        // Wait for initial images to load
-        await page.waitForTimeout(1000);
-
-        // Comprehensive image validation
-        const imageValidation = await page.evaluate(() => {
-            const images = Array.from(document.querySelectorAll('img'));
-            const pictureImages = Array.from(document.querySelectorAll('picture img'));
-            const allImages = [...new Set([...images, ...pictureImages])];
-
-            const broken = [];
-            const valid = [];
-
-            allImages.forEach(img => {
-                const src = img.currentSrc || img.src || img.getAttribute('data-src') || '';
-
-                const isBroken =
-                    !img.complete ||
-                    img.naturalWidth === 0 ||
-                    img.naturalHeight === 0 ||
-                    !src;
-
-                const imageData = {
-                    src: src,
-                    alt: img.alt || '',
-                    naturalWidth: img.naturalWidth,
-                    naturalHeight: img.naturalHeight,
-                    complete: img.complete
-                };
-
-                if (isBroken) {
-                    broken.push(imageData);
-                } else {
-                    valid.push(imageData);
-                }
-            });
-
-            return { broken, valid, total: allImages.length };
-        });
-
-        if (imageValidation.broken.length > 0) {
-            console.log(\`Found \${imageValidation.broken.length} broken images on "${escapedLabel}":\`);
-            imageValidation.broken.forEach((img, idx) => {
-                console.log(\` [\${idx + 1}] \${img.src}\`);
-                if (img.alt) {
-                    console.log(\`      Alt: "\${img.alt}"\`);
-                }
-                console.log(\`      Status: naturalWidth=\${img.naturalWidth}, complete=\${img.complete}\`);
-            });
-        } else if (imageValidation.total > 0) {
-            console.log(\` All \${imageValidation.valid.length} images loaded successfully on "${escapedLabel}"\`);
-        } else {
-            console.log(\`No images found on "${escapedLabel}"\`);
-        }
-    });
-
-    step('Return to previous page', async () => {
-        await enhancedStep('Return to previous page', 'homepage', async () => {
-            try {
-                await page.goBack({ waitUntil: 'domcontentloaded', timeout: 10000 });
-                console.log(' Browser back navigation successful');
-            } catch (e) {
-                console.log(' Back navigation failed, using direct navigation');
-                await page.goto(baseUrl, {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 15000
-                });
-            }
-        });
-    });`;
-  });
-
-  // Add final step
-  code += `
-    step('Final homepage verification', async () => {
-        await enhancedStep('Final homepage verification', 'homepage', async () => {
-            // Ensure we're back on the homepage
-            const currentUrl = page.url();
-            if (!currentUrl.includes(baseUrl)) {
-                console.log(' Navigating back to homepage for final verification');
-                await page.goto(baseUrl, {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 15000
-                });
-            } else {
-                console.log(' Already on homepage');
-            }
-        });
-    });
-});
-`;
-
-  return code;
-}
-
-// Detect downloadable resources based on link attributes and context
-function isDownloadableResource(url: string): boolean {
-  const extension = path.extname(url).toLowerCase();
-
-  // Smart assets page detection that preserves actual downloads**
-  // Only skip if it's a directory path ending with /assets/ or /assets, not actual files
-  const isAssetsDirectory =
-    ((url.endsWith("/assets/") || url.endsWith("/assets")) && !extension) || // No file extension = directory, not file
-    (url.includes("/assets/") &&
-      (url.endsWith("/assets/") || url.endsWith("/assets")) &&
-      !extension);
-
-  if (isAssetsDirectory) {
-    console.log(`🔍 Checking URL: ${url}`);
-    console.log(`   Extension: ${extension}`);
-    console.log(
-      `   Assets page detected - treating as regular page, not download`,
-    );
-    console.log(`   Final result: NOT DOWNLOADABLE`);
-    return false;
-  }
-
-  // Enhanced list of downloadable extensions
-  const downloadableExtensions = [
-    ".pdf",
-    ".zip",
-    ".rar",
-    ".7z",
-    ".doc",
-    ".docx",
-    ".xls",
-    ".xlsx",
-    ".csv",
-    ".txt",
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".webp",
-    ".svg",
-    ".mp4",
-    ".mov",
-    ".avi",
-    ".wmv",
-    ".mp3",
-    ".wav",
-    ".psd",
-    ".ai",
-    ".eps",
-    ".indd",
-  ];
-
-  // Enhanced press kit specific download patterns
-  const downloadKeywords = [
-    // Press kit specific patterns (removed generic '/assets/' since we handle it above)
-    "/download",
-    "/files/",
-    "/media/",
-    "/press/",
-    "product.zip",
-    "stills.zip",
-    "images.zip",
-    "media.zip",
-    "gallery.zip",
-    "press.zip",
-    "campaign.zip",
-    "press_release",
-    "press-release",
-    "presskit",
-    "high-res",
-    "highres",
-    "high_res",
-    "press_kit",
-    "press-kit",
-    // Tommy Hilfiger specific patterns
-    "tommy_hilfiger",
-    "tommy-hilfiger",
-    "mercedes-amg",
-    "mercedes_amg",
-    "clarence_ruth",
-    "clarence-ruth",
-  ];
-
-  const hasDownloadExtension = downloadableExtensions.includes(extension);
-  const hasDownloadKeyword = downloadKeywords.some((keyword) =>
-    url.toLowerCase().includes(keyword.toLowerCase()),
-  );
-
-  // More precise download detection that allows assets.zip, asset.zip, etc.**
-  const isDownloadLink =
-    url.toLowerCase().includes("download") ||
-    url.toLowerCase().includes("files/") ||
-    url.toLowerCase().includes("media/") ||
-    url.toLowerCase().includes("press/") ||
-    url.toLowerCase().includes("product.zip") ||
-    url.toLowerCase().includes("stills.zip") ||
-    url.toLowerCase().includes("images.zip") ||
-    url.toLowerCase().includes("campaign.zip") ||
-    url.toLowerCase().includes("press_release") ||
-    url.toLowerCase().includes("press-release") ||
-    url.toLowerCase().includes("high-res") ||
-    url.toLowerCase().includes("highres") ||
-    (url.toLowerCase().includes("assets") && extension.length > 0);
-
-  console.log(`🔍 Checking URL: ${url}`);
-  console.log(`   Extension: ${extension}`);
-  console.log(`   Has download extension: ${hasDownloadExtension}`);
-  console.log(`   Has download keyword: ${hasDownloadKeyword}`);
-  console.log(`   Is download link: ${isDownloadLink}`);
-
-  const isDownloadable =
-    hasDownloadExtension || hasDownloadKeyword || isDownloadLink;
-  console.log(
-    `   Final result: ${isDownloadable ? "DOWNLOADABLE" : "NOT DOWNLOADABLE"}`,
-  );
-
-  return isDownloadable;
 }
 
 // Validate all images and links on the page to detect broken URLs
@@ -1964,11 +1055,7 @@ async function validateAssetImages(page: Page): Promise<{
 
       return allImgs.map((img) => {
         const htmlImg = img as HTMLImageElement;
-        const src =
-          htmlImg.currentSrc ||
-          htmlImg.src ||
-          htmlImg.getAttribute("data-src") ||
-          "";
+        const src = htmlImg.currentSrc || htmlImg.src || htmlImg.getAttribute("data-src") || "";
         const srcset = htmlImg.srcset || "";
 
         const isBroken =
@@ -1986,8 +1073,7 @@ async function validateAssetImages(page: Page): Promise<{
           naturalHeight: htmlImg.naturalHeight,
           complete: htmlImg.complete,
           isBroken: isBroken,
-          parentText:
-            htmlImg.parentElement?.textContent?.trim().substring(0, 100) || "",
+          parentText: htmlImg.parentElement?.textContent?.trim().substring(0, 100) || "",
         };
       });
     });
@@ -1995,43 +1081,35 @@ async function validateAssetImages(page: Page): Promise<{
     console.log(`   Found ${imagesData.length} images on page`);
 
     // First, check for browser-detected broken images (most reliable)
-    const browserBrokenImages = imagesData.filter(
-      (img) => img.isBroken && img.src,
-    );
+    const browserBrokenImages = imagesData.filter((img) => img.isBroken && img.src);
     const validInBrowser = imagesData.filter((img) => !img.isBroken && img.src);
 
     if (browserBrokenImages.length > 0) {
-      console.log(
-        `   Browser detected ${browserBrokenImages.length} broken images`,
-      );
+      console.log(`   Browser detected ${browserBrokenImages.length} broken images`);
       browserBrokenImages.forEach((img) => {
         results.brokenImages.push({
           src: img.src,
-          alt: img.alt || img.title || img.parentText || "No context",
+          alt: img.alt || img.title || img.parentText || DEFAULT_TEXT.NO_CONTEXT,
           error: `Failed to load in browser (naturalWidth=${img.naturalWidth}, complete=${img.complete})`,
         });
       });
     }
 
     // Track total images found globally
-    globalTotalLinksFound += imagesData.length;
+    testState.incrementTotalLinksFound(imagesData.length);
 
     // For images that loaded in browser, optionally verify via HTTP
     const maxHttpValidations = Math.min(
       validInBrowser.length,
-      config.allowedDownloads.maxImagesToValidate || 200,
+      config.allowedDownloads.maxImagesToValidate || VALIDATION_LIMITS.MAX_IMAGES_TO_VALIDATE
     );
 
     console.log(
-      `   Validating ${maxHttpValidations} of ${validInBrowser.length} browser-loaded images via HTTP...`,
+      `   Validating ${maxHttpValidations} of ${validInBrowser.length} browser-loaded images via HTTP...`
     );
 
     // HTTP validation for images that loaded in browser
-    for (
-      let i = 0;
-      i < Math.min(validInBrowser.length, maxHttpValidations);
-      i++
-    ) {
+    for (let i = 0; i < Math.min(validInBrowser.length, maxHttpValidations); i++) {
       const img = validInBrowser[i];
       if (!img.src) continue;
 
@@ -2048,8 +1126,7 @@ async function validateAssetImages(page: Page): Promise<{
             src: img.src,
             alt: img.alt || img.title || img.parentText || "",
             statusCode: check.statusCode,
-            error:
-              check.error || "HTTP validation failed (may be CORS restricted)",
+            error: check.error || "HTTP validation failed (may be CORS restricted)",
           });
         }
       } catch (_error) {
@@ -2063,13 +1140,11 @@ async function validateAssetImages(page: Page): Promise<{
         href: (link as HTMLAnchorElement).href,
         text: (link as HTMLAnchorElement).textContent?.trim() || "",
         innerHTML: (link as HTMLAnchorElement).innerHTML,
-      })),
+      }))
     );
 
     // Also check for video links if configured
-    const videoSelectors =
-      'video source, iframe[src*="youtube"], iframe[src*="vimeo"], a[href*=".mp4"], a[href*=".mov"], a[href*=".webm"]';
-    const videoElements = await page.$$eval(videoSelectors, (elements) =>
+    const videoElements = await page.$$eval(VIDEO_SELECTORS, (elements) =>
       elements
         .map((el) => {
           if (el.tagName === "SOURCE") {
@@ -2081,15 +1156,15 @@ async function validateAssetImages(page: Page): Promise<{
           }
           return null;
         })
-        .filter(Boolean),
+        .filter(Boolean)
     );
 
     // Validate videos if any found
     const maxVideosToValidate =
-      config.allowedDownloads.maxVideosToValidate || 50;
+      config.allowedDownloads.maxVideosToValidate || VALIDATION_LIMITS.MAX_VIDEOS_TO_VALIDATE;
     if (videoElements.length > 0) {
       console.log(
-        `   Found ${videoElements.length} video links, validating up to ${maxVideosToValidate}...`,
+        `   Found ${videoElements.length} video links, validating up to ${maxVideosToValidate}...`
       );
       const videosToCheck = videoElements.slice(0, maxVideosToValidate);
 
@@ -2097,7 +1172,7 @@ async function validateAssetImages(page: Page): Promise<{
         if (video && typeof video === "object" && "url" in video) {
           const check = await verifyResourceExists(video.url, true);
           if (!check.exists) {
-            _globalBrokenVideos++;
+            testState.incrementBrokenVideos();
             results.brokenImages.push({
               src: video.url,
               alt: `Video (${video.type})`,
@@ -2110,11 +1185,8 @@ async function validateAssetImages(page: Page): Promise<{
       }
 
       // Track video statistics separately
-      globalVideosFound += videoElements.length;
-      globalVideosValidated += Math.min(
-        videoElements.length,
-        maxVideosToValidate,
-      );
+      testState.incrementVideosFound(videoElements.length);
+      testState.incrementVideosValidated(Math.min(videoElements.length, maxVideosToValidate));
     }
 
     // Check these links for broken ones too
@@ -2136,7 +1208,7 @@ async function validateAssetImages(page: Page): Promise<{
     }
   } catch (error) {
     console.log(
-      `Error validating asset images: ${error instanceof Error ? error.message : String(error)}`,
+      `Error validating asset images: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 
@@ -2146,22 +1218,22 @@ async function validateAssetImages(page: Page): Promise<{
 // Better resource verification with proper headers and retry logic
 async function verifyResourceExists(
   url: string,
-  silent: boolean = false,
+  silent: boolean = false
 ): Promise<{
   exists: boolean;
   contentLength?: number;
   statusCode?: number;
   error?: string;
 }> {
-  const maxRetries = silent ? 1 : 3; // Fewer retries for bulk validation
+  const maxRetries = silent
+    ? RETRY_CONFIG.RESOURCE_VERIFICATION_SILENT
+    : RETRY_CONFIG.RESOURCE_VERIFICATION;
   let currentRetry = 0;
 
   while (currentRetry < maxRetries) {
     try {
       if (!silent) {
-        console.log(
-          `📥 Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`,
-        );
+        console.log(`📥 Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
       }
 
       const result = await new Promise<{
@@ -2186,16 +1258,13 @@ async function verifyResourceExists(
             "Cache-Control": "no-cache",
             Pragma: "no-cache",
           },
-          timeout: silent ? 5000 : 30000, // Shorter timeout for bulk validation
+          timeout: silent ? TIMEOUTS.RESOURCE_CHECK_SILENT : TIMEOUTS.RESOURCE_CHECK,
         };
 
         const req = protocol.request(url, options, (res) => {
           const statusCode = res.statusCode || 0;
           const contentType = res.headers["content-type"] || "";
-          const contentLength = Number.parseInt(
-            res.headers["content-length"] || "0",
-            10,
-          );
+          const contentLength = Number.parseInt(res.headers["content-length"] || "0", 10);
 
           if (!silent) {
             console.log(`📥 Resource check response:`);
@@ -2207,8 +1276,7 @@ async function verifyResourceExists(
           // Some servers return 405 for HEAD requests - treat as success if it's an image
           const isSuccess =
             (statusCode >= 200 && statusCode < 400) ||
-            (statusCode === 405 &&
-              url.match(/\.(jpg|jpeg|png|gif|webp|tiff|bmp)$/i) !== null); // Method not allowed for HEAD on images
+            (statusCode === 405 && url.match(/\.(jpg|jpeg|png|gif|webp|tiff|bmp)$/i) !== null); // Method not allowed for HEAD on images
 
           req.destroy();
 
@@ -2270,18 +1338,13 @@ async function verifyResourceExists(
 }
 
 // Download file with retry logic for network failures
-async function downloadFile(
-  url: string,
-  destination: string,
-): Promise<boolean> {
-  const maxRetries = 3;
+async function downloadFile(url: string, destination: string): Promise<boolean> {
+  const maxRetries = RETRY_CONFIG.DOWNLOAD_ATTEMPTS;
   let currentRetry = 0;
 
   while (currentRetry < maxRetries) {
     try {
-      console.log(
-        `📥 Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`,
-      );
+      console.log(`📥 Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
 
       const success = await new Promise<boolean>((resolve) => {
         const protocol = url.startsWith("https") ? https : http;
@@ -2302,7 +1365,7 @@ async function downloadFile(
             "Cache-Control": "no-cache",
             Pragma: "no-cache",
           },
-          timeout: 60000, // Increased timeout to 60 seconds
+          timeout: TIMEOUTS.DOWNLOAD,
         };
 
         const req = protocol.get(url, options, (response) => {
@@ -2311,18 +1374,11 @@ async function downloadFile(
           console.log(`📥 Download response: ${statusCode} for ${url}`);
 
           // Handle redirects
-          if (
-            statusCode >= 300 &&
-            statusCode < 400 &&
-            response.headers.location
-          ) {
+          if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
             file.close();
             fs.existsSync(destination) && fs.unlinkSync(destination);
 
-            const redirectUrl = new URL(
-              response.headers.location,
-              url,
-            ).toString();
+            const redirectUrl = new URL(response.headers.location, url).toString();
             console.log(`↗️ Following redirect to: ${redirectUrl}`);
 
             // Recursive call for redirect
@@ -2337,15 +1393,12 @@ async function downloadFile(
             console.log(`Content-Type: ${contentType}`);
 
             // Check content length
-            const contentLength = Number.parseInt(
-              response.headers["content-length"] || "0",
-              10,
-            );
+            const contentLength = Number.parseInt(response.headers["content-length"] || "0", 10);
             console.log(`📦 Content-Length: ${formatFileSize(contentLength)}`);
 
             if (contentLength > config.allowedDownloads.maxFileSize) {
               console.log(
-                `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
+                `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
               );
               file.close();
               fs.existsSync(destination) && fs.unlinkSync(destination);
@@ -2360,9 +1413,7 @@ async function downloadFile(
             response.on("data", (chunk) => {
               downloadedSize += chunk.length;
               if (downloadedSize > config.allowedDownloads.maxFileSize) {
-                console.log(
-                  `Download cancelled: File size exceeded during download`,
-                );
+                console.log(`Download cancelled: File size exceeded during download`);
                 req.destroy();
                 file.close();
                 fs.existsSync(destination) && fs.unlinkSync(destination);
@@ -2384,7 +1435,7 @@ async function downloadFile(
                 const stats = fs.statSync(destination);
                 if (stats.size > 0) {
                   console.log(
-                    `Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`,
+                    `Successfully downloaded: ${destination} (${formatFileSize(stats.size)})`
                   );
                   if (!isResolved) {
                     isResolved = true;
@@ -2474,21 +1525,8 @@ async function downloadFile(
   return false;
 }
 
-// Helper to format file size
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 Bytes";
-
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`;
-}
-
 // Generate comprehensive broken links report
-async function generateBrokenLinksReport(
-  brokenLinks: Map<string, BrokenLink[]>,
-) {
+async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>) {
   if (brokenLinks.size === 0) {
     console.log("\nNo broken links found during validation!");
     return;
@@ -2597,9 +1635,7 @@ async function generateBrokenLinksReport(
   console.log("BROKEN LINKS REPORT GENERATED");
   console.log("=".repeat(80));
   console.log(`\n🔴 Total Broken Links Found: ${totalBrokenLinks}`);
-  console.log(
-    `\n📍 Pages with Issues (${report.summary.pagesWithBrokenLinks}):\n`,
-  );
+  console.log(`\n📍 Pages with Issues (${report.summary.pagesWithBrokenLinks}):\n`);
 
   for (const [pageUrl, links] of Object.entries(brokenByPage)) {
     console.log(`\n  ${pageUrl}`);
@@ -2607,7 +1643,7 @@ async function generateBrokenLinksReport(
 
     links.forEach((link, index) => {
       console.log(
-        `     ${index + 1}. [${(link.type || "LINK").toUpperCase()}] ${link.url || link.brokenUrl}`,
+        `     ${index + 1}. [${(link.type || "LINK").toUpperCase()}] ${link.url || link.brokenUrl}`
       );
       if (link.suggestedFix) {
         console.log(`        → Suggested: ${link.suggestedFix}`);
@@ -2627,7 +1663,7 @@ async function generateBrokenLinksReport(
 async function scanPageForDownloads(page: Page, pageName: string) {
   console.log(`🔍 Scanning "${pageName}" for download links...`);
 
-  const downloadLinks = await page.evaluate(() => {
+  const downloadLinks = await page.evaluate((downloadSelectors) => {
     const downloads: Array<{
       text: string;
       href: string;
@@ -2636,50 +1672,6 @@ async function scanPageForDownloads(page: Page, pageName: string) {
     }> = [];
 
     // Enhanced selectors for download links on the current page
-    const downloadSelectors = [
-      // Direct download links
-      'a[href*=".zip"]',
-      'a[href*=".pdf"]',
-      'a[href*=".rar"]',
-      'a[href*=".7z"]',
-
-      // Links with download keywords
-      'a[href*="download"]',
-      'a[href*="assets/"]',
-      'a[href*="media/"]',
-      'a[href*="files/"]',
-
-      // Press kit specific patterns
-      'a[href*="product.zip"]',
-      'a[href*="stills.zip"]',
-      'a[href*="images.zip"]',
-      'a[href*="campaign.zip"]',
-      'a[href*="press.zip"]',
-      'a[href*="gallery.zip"]',
-
-      // Text-based detection
-      'a:has-text("download")',
-      'a:has-text("Download")',
-      'a:has-text("DOWNLOAD")',
-      "a[download]",
-
-      // Class-based detection
-      ".download",
-      ".download-link",
-      ".download-btn",
-      ".asset-download",
-
-      // Press kit specific text patterns
-      'a:has-text("stills")',
-      'a:has-text("Stills")',
-      'a:has-text("STILLS")',
-      'a:has-text("high-res")',
-      'a:has-text("High-Res")',
-      'a:has-text("assets")',
-      'a:has-text("Assets")',
-      'a:has-text("ASSETS")',
-    ];
-
     for (const selector of downloadSelectors) {
       try {
         const links = document.querySelectorAll(selector);
@@ -2737,12 +1729,10 @@ async function scanPageForDownloads(page: Page, pageName: string) {
     }
 
     return downloads;
-  });
+  }, DOWNLOAD_SELECTORS);
 
   if (downloadLinks.length > 0) {
-    console.log(
-      `📥 Found ${downloadLinks.length} download links on "${pageName}":`,
-    );
+    console.log(`📥 Found ${downloadLinks.length} download links on "${pageName}":`);
     downloadLinks.forEach((link, idx) => {
       console.log(`   ${idx + 1}. 📥 ${link.text} (${link.href})`);
     });
