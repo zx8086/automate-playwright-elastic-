@@ -60,19 +60,25 @@ bun update
 
 ### Configuration System
 - **config.ts**: Centralized configuration using Zod for type-safe validation
+- **src/constants.ts**: All constants centralized for maintainability and consistency
 - Environment variables override defaults via `.env` file
 - Three main config sections: server, browser, and download settings
 - Configuration validation happens at startup with descriptive error messages
 
-### Test Structure
-- **src/playwright.spec.ts**: Main test file containing navigation logic
-  - `identifyNavigation()`: Discovers navigation links using multiple selector strategies
-  - `waitForPageLoad()`: Ensures pages are fully loaded before interaction
-  - `validateAssetImages()`: Detects broken images using browser-based and HTTP validation
-  - `downloadFile()`: Handles asset downloads with validation
-  - `navigateToLinkPages()`: Main navigation orchestrator
-  - `generateElasticSyntheticsTest()`: Creates monitoring tests with image validation
-  - `generateBrokenLinksReport()`: Creates detailed reports of broken images and assets
+### Modular Structure
+- **src/playwright.spec.ts**: Main test orchestration and navigation flow
+- **src/constants.ts**: Centralized constants (selectors, timeouts, limits, defaults)
+- **src/download-detector.ts**: Download detection and validation logic
+- **src/test-state.ts**: Global state management for cross-page tracking
+- **src/utils.ts**: Utility functions and helpers
+- **src/synthetics-generator.ts**: Elastic Synthetics test generation
+
+### Key Functions
+- `identifyNavigation()`: Discovers navigation links using multiple selector strategies
+- `validateAssetImages()`: Detects broken images using browser-based and HTTP validation
+- `downloadFile()`: Handles asset downloads with validation and retry logic
+- `generateElasticSyntheticsTest()`: Creates monitoring tests with image validation
+- `generateBrokenLinksReport()`: Creates detailed reports of broken images and assets
 
 ### Navigation Flow
 1. Identifies navigation elements using press-kit specific selectors
@@ -92,6 +98,13 @@ bun update
 
 ## Directory Structure
 ```
+src/                    # Source code modules
+  ├── playwright.spec.ts          # Main test orchestration
+  ├── constants.ts                # Centralized constants
+  ├── download-detector.ts        # Download detection logic
+  ├── test-state.ts               # Global state management
+  ├── utils.ts                    # Utility functions
+  └── synthetics-generator.ts     # Test generation
 navigation-screenshots/  # Page screenshots and sitemap.html
 downloads/              # Downloaded press kit assets
 synthetics/            # Generated Elastic Synthetics tests
@@ -139,13 +152,13 @@ Generates TypeScript tests with:
 ## Common Development Tasks
 
 ### Adding New Navigation Selectors
-Edit `identifyNavigation()` in src/playwright.spec.ts:
+Add selectors to `NAVIGATION_SELECTORS` in src/constants.ts:
 ```typescript
-const navSelectors = [
+export const NAVIGATION_SELECTORS = [
   // Add new selectors here
   ".your-new-selector a",
   // ...existing selectors
-];
+] as const;
 ```
 
 ### Customizing Download Types
@@ -158,12 +171,12 @@ allowedMimeTypes: ["application/custom"]
 
 ### Debugging Navigation Issues
 1. Check console logs for "No navigation items found"
-2. Review navigation selectors in `identifyNavigation()`
+2. Review navigation selectors in `NAVIGATION_SELECTORS` constant
 3. Verify page load with `DEBUG=pw:api bun run test`
 4. Check screenshots in `navigation-screenshots/` directory
 
 ### Debugging Broken Images
-1. Check console output for "❌ Browser detected X broken images"
+1. Check console output for "Browser detected X broken images"
 2. Review broken-links-reports/ for detailed analysis
 3. Verify image loading with naturalWidth/Height properties
 4. Check for lazy-loaded images that may need additional wait time
@@ -178,6 +191,14 @@ allowedMimeTypes: ["application/custom"]
 - Dual validation approach balances accuracy with performance
 
 ## Recent Enhancements
+
+### Modular Architecture & Constants Centralization (v2.1)
+- **Complete refactoring**: Modular architecture with 31% reduction in main file size
+- **Centralized constants**: All constants moved to `src/constants.ts` for maintainability
+- **New modules**: `download-detector.ts`, `test-state.ts`, `utils.ts`, `synthetics-generator.ts`
+- **Eliminated duplication**: Consistent constant usage across all modules
+- **Type safety**: Centralized timeout, retry, and validation configurations
+- **Browser context fixes**: Proper parameter passing for constants in page.evaluate()
 
 ### Broken Image Detection (v2.0)
 - **Browser-based validation**: Uses naturalWidth, naturalHeight, and complete properties

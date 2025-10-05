@@ -137,7 +137,12 @@ ENVIRONMENT=development BASE_URL=https://dev.example.com bun run  test
 ```
 automate-playwright-elastic/
 ├── src/
-│   └── playwright.spec.ts          # Main test suite with image validation
+│   ├── playwright.spec.ts          # Main test suite with navigation logic
+│   ├── constants.ts                # Centralized constants and configuration
+│   ├── download-detector.ts        # Download detection and validation logic
+│   ├── test-state.ts               # Global test state management
+│   ├── utils.ts                    # Utility functions and helpers
+│   └── synthetics-generator.ts     # Elastic Synthetics test generation
 ├── config.ts                       # Configuration management with Zod v4
 ├── global-setup.ts                 # Global test setup
 ├── playwright.config.ts            # Playwright configuration
@@ -340,10 +345,10 @@ The project uses Zod for configuration validation:
 
 ### Adding New Navigation Selectors
 
-Modify the `identifyNavigation` function in `src/playwright.spec.ts`:
+Add selectors to the `NAVIGATION_SELECTORS` array in `src/constants.ts`:
 
 ```typescript
-const navSelectors = [
+export const NAVIGATION_SELECTORS = [
     // Press kit specific selectors
     ".press-kit-nav a", ".presskit-nav a", ".pk-nav a",
 
@@ -352,8 +357,11 @@ const navSelectors = [
     'a[href*=".pdf"]',   // PDF downloads
     'a[href*=".zip"]',   // ZIP downloads
     'a[href*="/assets/"]', // Asset downloads
+
+    // Add new selectors here
+    ".your-new-selector a",
     // ...existing selectors
-];
+] as const;
 ```
 
 ### Customizing Download Types
@@ -456,6 +464,13 @@ VIDEO_MODE=off bun run test
 ```
 
 ## Recent Updates
+
+### Version 2.1 - Modular Architecture & Constants Centralization
+- Complete refactoring into modular architecture with 31% reduction in main file size
+- Centralized all constants in `src/constants.ts` for better maintainability
+- New modular files: `download-detector.ts`, `test-state.ts`, `utils.ts`, `synthetics-generator.ts`
+- Eliminated code duplication with consistent constant usage across modules
+- Improved type safety with centralized timeout, retry, and validation configurations
 
 ### Version 2.0 - Enhanced Broken Image Detection
 - Browser-based image validation using naturalWidth/Height properties
