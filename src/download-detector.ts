@@ -40,7 +40,10 @@ export class DownloadDetector {
       url.toLowerCase().includes("press-release") ||
       url.toLowerCase().includes("high-res") ||
       url.toLowerCase().includes("highres") ||
-      (url.toLowerCase().includes("assets") && extension.length > 0);
+      (url.toLowerCase().includes("assets") && extension.length > 0) ||
+      // Bynder Brand Portal transfer URLs (external download service)
+      url.toLowerCase().includes("brandportal.tommy.com/transfer") ||
+      url.toLowerCase().includes("/transfer/");
 
     console.log(`Checking URL: ${url}`);
     console.log(`   Extension: ${extension}`);

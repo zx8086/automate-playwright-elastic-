@@ -28,7 +28,14 @@ import {
 import { DownloadDetector } from "./download-detector";
 import { generateElasticSyntheticsTest } from "./synthetics-generator";
 import { TestState } from "./test-state";
-import { formatFileSize } from "./utils";
+import {
+  createDownloadOptions,
+  createVerificationOptions,
+  formatFileSize,
+  isBynderTransferUrl,
+  isMalformedExternalUrl,
+  parseBynderTransferResponse,
+} from "./utils";
 
 // Extract schemas from config
 const {
@@ -75,7 +82,7 @@ test.describe("Site Navigation Test with Steps", () => {
           }
 
           if (cleanedCount > 0) {
-            console.log(`🗑️  ${dir.name}: cleaned ${cleanedCount} file(s)`);
+            console.log(`  ${dir.name}: cleaned ${cleanedCount} file(s)`);
           } else {
             console.log(`${dir.name}: already clean`);
           }
@@ -155,23 +162,23 @@ test.describe("Site Navigation Test with Steps", () => {
 
         // Skip if we've already processed this URL
         if (processedUrls.has(absoluteUrl)) {
-          console.log(`⏭️ Skipping already processed URL: ${absoluteUrl}`);
+          console.log(`[SKIP] Already processed URL: ${absoluteUrl}`);
           return;
         }
 
         // Check if it's a downloadable resource
         if (DownloadDetector.isDownloadableResource(item.href)) {
           try {
-            console.log(`📥 Handling downloadable resource: ${item.text}`);
+            console.log(`[DOWNLOAD] Handling downloadable resource: ${item.text}`);
 
             // Skip if we've already processed this download
             if (processedDownloads.has(absoluteUrl)) {
-              console.log(`⏭️ Skipping already processed download: ${absoluteUrl}`);
+              console.log(`[SKIP] Already processed download: ${absoluteUrl}`);
               return;
             }
 
             // Verify the resource exists and get content length
-            const { exists, contentLength } = await verifyResourceExists(absoluteUrl);
+            const { exists, contentLength, statusCode, error, retriesAttempted } = await verifyResourceExists(absoluteUrl);
 
             if (exists) {
               console.log(`Resource ${item.text} exists and is accessible`);
@@ -231,7 +238,36 @@ test.describe("Site Navigation Test with Steps", () => {
                 }
               }
             } else {
-              console.log(`Resource not accessible: ${absoluteUrl}`);
+              // Track failed download verification as broken link
+              const errorReason = statusCode
+                ? `HTTP ${statusCode}${error ? `: ${error}` : ""}`
+                : error || "Resource not accessible";
+              console.log(`[BROKEN] Resource not accessible: ${absoluteUrl} (${errorReason})`);
+
+              // Add to broken links for reporting
+              const brokenLink: BrokenLink = {
+                url: absoluteUrl,
+                pageFound: startUrl,
+                type: "download",
+                pageUrl: startUrl,
+                brokenUrl: absoluteUrl,
+                altText: item.text.replace(/\s+/g, " ").trim(),
+                error: errorReason,
+                statusCode: statusCode,
+                retriesAttempted: retriesAttempted,
+              };
+              testState.addBrokenLink(startUrl, brokenLink);
+
+              // Also add to skipped downloads for visibility
+              const skippedDownload: SkippedDownload = {
+                from: startUrl,
+                to: absoluteUrl,
+                label: item.text.replace(/\s+/g, " ").trim(),
+                fileSize: contentLength,
+                reason: errorReason,
+              };
+              SkippedDownloadSchema.parse(skippedDownload);
+              skippedDownloads.push(skippedDownload);
             }
           } catch (error: unknown) {
             console.log(
@@ -284,7 +320,7 @@ test.describe("Site Navigation Test with Steps", () => {
               const pageDownloadLinks = await checkPageSpecificElements(page, item.text);
 
               // Validate images on ALL pages (generic for any site)
-              console.log(`\n🔍 Validating images on "${item.text}" page...`);
+              console.log(`\n[VALIDATE] Validating images on "${item.text}" page...`);
               const imageValidation = await validateAssetImages(page);
 
               if (imageValidation.brokenImages.length > 0) {
@@ -323,20 +359,41 @@ test.describe("Site Navigation Test with Steps", () => {
               // Process any download links found on this page
               if (pageDownloadLinks && pageDownloadLinks.length > 0) {
                 for (const downloadLink of pageDownloadLinks) {
+                  // Check for malformed URLs (path incorrectly concatenated with external URL)
+                  if (isMalformedExternalUrl(downloadLink.href)) {
+                    console.log(`[BROKEN] Malformed URL detected on "${item.text}" page`);
+                    console.log(`   Link text: "${downloadLink.text}"`);
+                    console.log(`   Broken href: ${downloadLink.href}`);
+
+                    // Report as broken link
+                    const brokenLink: BrokenLink = {
+                      url: downloadLink.href,
+                      pageFound: currentUrl,
+                      type: "download",
+                      pageUrl: currentUrl,
+                      brokenUrl: downloadLink.href,
+                      altText: downloadLink.text.replace(/\s+/g, " ").trim(),
+                      error: "Malformed URL - path incorrectly concatenated with external URL",
+                    };
+                    testState.addBrokenLink(currentUrl, brokenLink);
+
+                    continue;
+                  }
+
                   const downloadUrl = new URL(downloadLink.href, currentUrl).toString();
 
                   // Skip if we've already processed this download
                   if (processedDownloads.has(downloadUrl)) {
-                    console.log(`⏭️ Skipping already processed download: ${downloadUrl}`);
+                    console.log(`[SKIP] Already processed download: ${downloadUrl}`);
                     continue;
                   }
 
                   console.log(
-                    `📥 Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`
+                    `[DOWNLOAD] Processing download found on "${item.text}": ${downloadLink.text} (${downloadLink.href})`
                   );
                   try {
                     // Verify the resource exists
-                    const { exists, contentLength } = await verifyResourceExists(downloadUrl);
+                    const { exists, contentLength, statusCode, error: verifyError, retriesAttempted } = await verifyResourceExists(downloadUrl);
                     if (exists) {
                       console.log(
                         `Download resource ${downloadLink.text} exists and is accessible`
@@ -395,7 +452,36 @@ test.describe("Site Navigation Test with Steps", () => {
                         }
                       }
                     } else {
-                      console.log(`Download resource not accessible: ${downloadUrl}`);
+                      // Track failed download verification as broken link
+                      const errorReason = statusCode
+                        ? `HTTP ${statusCode}${verifyError ? `: ${verifyError}` : ""}`
+                        : verifyError || "Resource not accessible";
+                      console.log(`[BROKEN] Download resource not accessible: ${downloadUrl} (${errorReason})`);
+
+                      // Add to broken links for reporting
+                      const brokenLink: BrokenLink = {
+                        url: downloadUrl,
+                        pageFound: currentUrl,
+                        type: "download",
+                        pageUrl: currentUrl,
+                        brokenUrl: downloadUrl,
+                        altText: downloadLink.text.replace(/\s+/g, " ").trim(),
+                        error: errorReason,
+                        statusCode: statusCode,
+                        retriesAttempted: retriesAttempted,
+                      };
+                      testState.addBrokenLink(currentUrl, brokenLink);
+
+                      // Also add to skipped downloads for visibility
+                      const skippedDownload: SkippedDownload = {
+                        from: currentUrl,
+                        to: downloadUrl,
+                        label: downloadLink.text.replace(/\s+/g, " ").trim(),
+                        fileSize: contentLength,
+                        reason: errorReason,
+                      };
+                      SkippedDownloadSchema.parse(skippedDownload);
+                      skippedDownloads.push(skippedDownload);
                     }
                   } catch (error) {
                     console.log(
@@ -486,7 +572,7 @@ test.describe("Site Navigation Test with Steps", () => {
               `  Successfully validated ${totalValidated} link(s) out of ${totalFound} found:`
             );
           } else {
-            console.log(`  📊 Successfully validated ${totalValidated} link(s):`);
+            console.log(`  [STATS] Successfully validated ${totalValidated} link(s):`);
           }
 
           if (testState.getValidatedLinksCount() > 0) {
@@ -551,7 +637,7 @@ async function getElementCounts(page: Page): Promise<ElementCounts> {
 
 // Identify navigation items with better detection
 async function identifyNavigation(page: Page) {
-  console.log("🔍 Analyzing navigation structure with enhanced detection...");
+  console.log("[NAV] Analyzing navigation structure with enhanced detection...");
 
   const navItems = await page.evaluate(
     ({
@@ -648,7 +734,10 @@ async function identifyNavigation(page: Page) {
             href.includes("images.zip") ||
             href.includes("media.zip") ||
             text.toLowerCase().includes("download") ||
-            (href.toLowerCase().includes("assets") && hasFileExtension);
+            (href.toLowerCase().includes("assets") && hasFileExtension) ||
+            // Bynder Brand Portal transfer URLs (external download service)
+            href.includes("brandportal.tommy.com/transfer") ||
+            href.includes("/transfer/");
 
           // Check if this link is already in our list
           if (!items.some((item) => item.href === href)) {
@@ -720,7 +809,7 @@ async function checkPageSpecificElements(
         const viewportHeight = window.innerHeight;
         const totalSteps = Math.ceil(scrollHeight / viewportHeight);
 
-        console.log(`📜 Starting enhanced scroll: ${totalSteps} steps for lazy loading`);
+        console.log(`[SCROLL] Starting enhanced scroll: ${totalSteps} steps for lazy loading`);
 
         for (let step = 0; step < totalSteps; step++) {
           const scrollTo = step * viewportHeight;
@@ -768,7 +857,7 @@ async function checkPageSpecificElements(
       const bioElements = await page.locator("article, .bio, .biography, .about, .profile").count();
       const textBlocks = await page.locator("p, .text, .content").count();
       console.log(
-        `👤 Biography page elements: ${bioElements} bio sections, ${textBlocks} text blocks`
+        `[BIO] Biography page elements: ${bioElements} bio sections, ${textBlocks} text blocks`
       );
     } else if (pageNameLower.includes("contact")) {
       const contactElements = await page
@@ -778,7 +867,7 @@ async function checkPageSpecificElements(
         .locator('a[href*="instagram"], a[href*="twitter"], a[href*="facebook"]')
         .count();
       console.log(
-        `📞 Contact page elements: ${contactElements} contact forms, ${socialLinks} social links`
+        `[CONTACT] Contact page elements: ${contactElements} contact forms, ${socialLinks} social links`
       );
     } else if (
       pageNameLower.includes("asset") ||
@@ -794,7 +883,7 @@ async function checkPageSpecificElements(
       const images = await page.locator("img").count();
       const videos = await page.locator("video, .video").count();
 
-      console.log(`🖼️  Asset page elements:`);
+      console.log(`[ASSETS] Asset page elements:`);
       console.log(`   - Gallery containers: ${galleryElements}`);
       console.log(`   - Download links: ${downloadLinks}`);
       console.log(`   - Images: ${images}`);
@@ -808,13 +897,14 @@ async function checkPageSpecificElements(
         .count();
       console.log(`   - High-res/optimized images: ${hiResImages}`);
 
-      // Return empty array if validation is disabled
-      return [];
+      // Scan for download links on the assets page (including Bynder transfer URLs)
+      const assetDownloadLinks = await scanPageForDownloads(page, pageName);
+      return assetDownloadLinks;
     } else if (pageNameLower.includes("press") || pageNameLower.includes("release")) {
       const pressElements = await page.locator(".press, .release, .news, article").count();
       const pdfLinks = await page.locator('a[href*=".pdf"]').count();
       console.log(
-        `📰 Press page elements: ${pressElements} press sections, ${pdfLinks} PDF downloads`
+        `[PRESS] Press page elements: ${pressElements} press sections, ${pdfLinks} PDF downloads`
       );
     } else if (pageNameLower.includes("video")) {
       const videoElements = await page
@@ -822,13 +912,13 @@ async function checkPageSpecificElements(
         .count();
       const videoDownloads = await page.locator('a[href*=".mp4"], a[href*=".mov"]').count();
       console.log(
-        `🎥 Video page elements: ${videoElements} video players, ${videoDownloads} video downloads`
+        `[VIDEO] Video page elements: ${videoElements} video players, ${videoDownloads} video downloads`
       );
     } else if (pageNameLower.includes("aleali")) {
       const profileElements = await page.locator(".profile, .bio, .about, article").count();
       const imageElements = await page.locator("img").count();
       console.log(
-        `👩 Aleali May page elements: ${profileElements} profile sections, ${imageElements} images`
+        `[PROFILE] Aleali May page elements: ${profileElements} profile sections, ${imageElements} images`
       );
     }
 
@@ -844,7 +934,7 @@ async function checkPageSpecificElements(
       console.log(`Missing critical elements: ${hasMissingElements.join(", ")}`);
     }
 
-    // For asset pages, we've already handled this in validateAssetImages
+    // For asset pages, download links are already scanned above
     if (
       pageNameLower.includes("asset") ||
       pageNameLower.includes("image") ||
@@ -852,13 +942,13 @@ async function checkPageSpecificElements(
       pageNameLower.includes("gallery") ||
       pageNameLower.includes("stills")
     ) {
-      // Asset pages already handled above with validateAssetImages
+      // Asset pages already handled above
       return [];
     }
 
     const pageDownloadLinks = await scanPageForDownloads(page, pageName);
 
-    // **NEW: RETURN THE DOWNLOAD LINKS FOUND ON THIS PAGE**
+    // Return the download links found on this page
     return pageDownloadLinks;
   });
 }
@@ -1224,16 +1314,25 @@ async function verifyResourceExists(
   contentLength?: number;
   statusCode?: number;
   error?: string;
+  retriesAttempted?: number;
+  bynderFileName?: string;
 }> {
+  // Special handling for Bynder transfer URLs
+  if (isBynderTransferUrl(url)) {
+    return verifyBynderTransferUrl(url, silent);
+  }
+
   const maxRetries = silent
     ? RETRY_CONFIG.RESOURCE_VERIFICATION_SILENT
     : RETRY_CONFIG.RESOURCE_VERIFICATION;
   let currentRetry = 0;
+  let lastStatusCode: number | undefined;
+  let lastError: string | undefined;
 
   while (currentRetry < maxRetries) {
     try {
       if (!silent) {
-        console.log(`📥 Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
+        console.log(`[VERIFY] Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
       }
 
       const result = await new Promise<{
@@ -1243,23 +1342,7 @@ async function verifyResourceExists(
         error?: string;
       }>((resolve) => {
         const protocol = url.startsWith("https") ? https : http;
-
-        const options = {
-          method: "HEAD", // Use HEAD for faster validation without downloading
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Accept: "*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            Connection: "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            Referer: new URL(url).origin,
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
-          },
-          timeout: silent ? TIMEOUTS.RESOURCE_CHECK_SILENT : TIMEOUTS.RESOURCE_CHECK,
-        };
+        const options = createVerificationOptions(url, silent);
 
         const req = protocol.request(url, options, (res) => {
           const statusCode = res.statusCode || 0;
@@ -1267,7 +1350,7 @@ async function verifyResourceExists(
           const contentLength = Number.parseInt(res.headers["content-length"] || "0", 10);
 
           if (!silent) {
-            console.log(`📥 Resource check response:`);
+            console.log(`[VERIFY] Resource check response:`);
             console.log(`   Status: ${statusCode}`);
             console.log(`   Content-Type: ${contentType}`);
             console.log(`   Content-Length: ${formatFileSize(contentLength)}`);
@@ -1296,7 +1379,7 @@ async function verifyResourceExists(
         req.on("timeout", () => {
           req.destroy();
           if (!silent) {
-            console.log(`⏱️ Resource verification timeout`);
+            console.log(`[TIMEOUT] Resource verification timeout`);
           }
           resolve({ exists: false, error: "Request timeout" });
         });
@@ -1305,14 +1388,18 @@ async function verifyResourceExists(
       });
 
       if (result.exists) {
-        return result;
+        return { ...result, retriesAttempted: currentRetry };
       }
+
+      // Track the last status code and error for final report
+      if (result.statusCode) lastStatusCode = result.statusCode;
+      if (result.error) lastError = result.error;
 
       currentRetry++;
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
         if (!silent) {
-          console.log(`⏱️ Retrying verification in ${delay}ms...`);
+          console.log(`[RETRY] Retrying verification in ${delay}ms...`);
         }
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
@@ -1320,11 +1407,12 @@ async function verifyResourceExists(
       if (!silent) {
         console.log(`Resource verification exception: ${error}`);
       }
+      lastError = error instanceof Error ? error.message : String(error);
       currentRetry++;
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
         if (!silent) {
-          console.log(`⏱️ Retrying verification in ${delay}ms...`);
+          console.log(`[RETRY] Retrying verification in ${delay}ms...`);
         }
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
@@ -1334,7 +1422,135 @@ async function verifyResourceExists(
   if (!silent) {
     console.log(`All ${maxRetries} verification attempts failed for: ${url}`);
   }
-  return { exists: false, error: "All verification attempts failed" };
+  return {
+    exists: false,
+    error: lastError || "All verification attempts failed",
+    statusCode: lastStatusCode,
+    retriesAttempted: currentRetry,
+  };
+}
+
+// Special verification for Bynder transfer URLs
+// These URLs return HTML pages with download configuration, not direct files
+async function verifyBynderTransferUrl(
+  url: string,
+  silent: boolean = false
+): Promise<{
+  exists: boolean;
+  contentLength?: number;
+  statusCode?: number;
+  error?: string;
+  retriesAttempted?: number;
+  bynderFileName?: string;
+}> {
+  if (!silent) {
+    console.log(`[BYNDER] Verifying Bynder transfer URL: ${url}`);
+  }
+
+  return new Promise((resolve) => {
+    const protocol = url.startsWith("https") ? https : http;
+    let responseData = "";
+
+    const options = {
+      method: "GET" as const,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      timeout: TIMEOUTS.RESOURCE_CHECK,
+    };
+
+    const req = protocol.request(url, options, (res) => {
+      const statusCode = res.statusCode || 0;
+
+      if (!silent) {
+        console.log(`[BYNDER] Response status: ${statusCode}`);
+      }
+
+      // Collect response body to analyze
+      res.on("data", (chunk) => {
+        responseData += chunk.toString();
+        // Limit response size to prevent memory issues
+        if (responseData.length > 100000) {
+          req.destroy();
+        }
+      });
+
+      res.on("end", () => {
+        // Check for Access Denied XML response
+        if (
+          responseData.includes("<Code>AccessDenied</Code>") ||
+          responseData.includes("<Message>Access Denied</Message>")
+        ) {
+          if (!silent) {
+            console.log(`[BYNDER] Access Denied - transfer link may be expired or restricted`);
+          }
+          resolve({
+            exists: false,
+            statusCode,
+            error: "Access Denied - Bynder transfer link expired or restricted",
+            retriesAttempted: 0,
+          });
+          return;
+        }
+
+        // Parse the Bynder transfer page
+        const validation = parseBynderTransferResponse(responseData);
+
+        if (validation.isValid) {
+          if (!silent) {
+            console.log(`[BYNDER] Valid transfer link found`);
+            if (validation.fileName) {
+              console.log(`[BYNDER] File: ${validation.fileName}`);
+            }
+          }
+          resolve({
+            exists: true,
+            statusCode,
+            bynderFileName: validation.fileName,
+            retriesAttempted: 0,
+          });
+        } else {
+          if (!silent) {
+            console.log(`[BYNDER] Invalid transfer: ${validation.error}`);
+          }
+          resolve({
+            exists: false,
+            statusCode,
+            error: validation.error || "Invalid Bynder transfer link",
+            retriesAttempted: 0,
+          });
+        }
+      });
+    });
+
+    req.on("error", (error) => {
+      if (!silent) {
+        console.log(`[BYNDER] Request error: ${error.message}`);
+      }
+      resolve({
+        exists: false,
+        error: error.message,
+        retriesAttempted: 0,
+      });
+    });
+
+    req.on("timeout", () => {
+      req.destroy();
+      if (!silent) {
+        console.log(`[BYNDER] Request timeout`);
+      }
+      resolve({
+        exists: false,
+        error: "Request timeout",
+        retriesAttempted: 0,
+      });
+    });
+
+    req.end();
+  });
 }
 
 // Download file with retry logic for network failures
@@ -1344,7 +1560,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
 
   while (currentRetry < maxRetries) {
     try {
-      console.log(`📥 Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
+      console.log(`[DOWNLOAD] Download attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
 
       const success = await new Promise<boolean>((resolve) => {
         const protocol = url.startsWith("https") ? https : http;
@@ -1352,26 +1568,12 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
         let downloadedSize = 0;
         let isResolved = false;
 
-        // Enhanced request options
-        const options = {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            Accept: "*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            Connection: "keep-alive",
-            Referer: new URL(url).origin,
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
-          },
-          timeout: TIMEOUTS.DOWNLOAD,
-        };
+        const options = createDownloadOptions(url);
 
         const req = protocol.get(url, options, (response) => {
           const statusCode = response.statusCode || 0;
 
-          console.log(`📥 Download response: ${statusCode} for ${url}`);
+          console.log(`[DOWNLOAD] Download response: ${statusCode} for ${url}`);
 
           // Handle redirects
           if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
@@ -1379,7 +1581,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
             fs.existsSync(destination) && fs.unlinkSync(destination);
 
             const redirectUrl = new URL(response.headers.location, url).toString();
-            console.log(`↗️ Following redirect to: ${redirectUrl}`);
+            console.log(`[REDIRECT] Following redirect to: ${redirectUrl}`);
 
             // Recursive call for redirect
             downloadFile(redirectUrl, destination).then(resolve);
@@ -1394,7 +1596,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
 
             // Check content length
             const contentLength = Number.parseInt(response.headers["content-length"] || "0", 10);
-            console.log(`📦 Content-Length: ${formatFileSize(contentLength)}`);
+            console.log(`[SIZE] Content-Length: ${formatFileSize(contentLength)}`);
 
             if (contentLength > config.allowedDownloads.maxFileSize) {
               console.log(
@@ -1492,7 +1694,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
           req.destroy();
           file.close();
           fs.existsSync(destination) && fs.unlinkSync(destination);
-          console.log(`⏱️ Download timeout after 60 seconds`);
+          console.log(`[TIMEOUT] Download timeout after 60 seconds`);
           if (!isResolved) {
             isResolved = true;
             resolve(false);
@@ -1507,7 +1709,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
       currentRetry++;
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
-        console.log(`⏱️ Retrying download in ${delay}ms...`);
+        console.log(`[RETRY] Retrying download in ${delay}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     } catch (error) {
@@ -1515,7 +1717,7 @@ async function downloadFile(url: string, destination: string): Promise<boolean> 
       currentRetry++;
       if (currentRetry < maxRetries) {
         const delay = currentRetry * 2000;
-        console.log(`⏱️ Retrying download in ${delay}ms...`);
+        console.log(`[RETRY] Retrying download in ${delay}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
@@ -1596,22 +1798,17 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
     markdown += `Found ${links.length} broken link(s):\n\n`;
 
     links.forEach((link, index) => {
-      markdown += `#### ${index + 1}. ${(link.type || "LINK").toUpperCase()}: ${link.url || link.brokenUrl}\n\n`;
-
-      if (link.altText) {
-        markdown += `- **Alt Text:** ${link.altText}\n`;
-      }
-
-      if (link.statusCode) {
-        markdown += `- **Status Code:** ${link.statusCode}\n`;
-      }
+      const typeLabel = (link.type || "LINK").toUpperCase();
+      const linkText = link.altText || "Unknown";
+      markdown += `#### ${index + 1}. [${typeLabel}] "${linkText}"\n\n`;
+      markdown += `- **URL:** \`${link.url || link.brokenUrl}\`\n`;
 
       if (link.error) {
         markdown += `- **Error:** ${link.error}\n`;
       }
 
-      if (link.suggestedFix) {
-        markdown += `- **Suggested Fix:** \`${link.suggestedFix}\`\n`;
+      if (link.statusCode) {
+        markdown += `- **Status Code:** HTTP ${link.statusCode}\n`;
       }
 
       markdown += `\n`;
@@ -1634,19 +1831,26 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
   console.log(`\n${"=".repeat(80)}`);
   console.log("BROKEN LINKS REPORT GENERATED");
   console.log("=".repeat(80));
-  console.log(`\n🔴 Total Broken Links Found: ${totalBrokenLinks}`);
-  console.log(`\n📍 Pages with Issues (${report.summary.pagesWithBrokenLinks}):\n`);
+  console.log(`\n[ERROR] Total Broken Links Found: ${totalBrokenLinks}`);
+  console.log(`\n[PAGES] Pages with Issues (${report.summary.pagesWithBrokenLinks}):\n`);
 
   for (const [pageUrl, links] of Object.entries(brokenByPage)) {
-    console.log(`\n  ${pageUrl}`);
-    console.log(`  └─ ${links.length} broken link(s):\n`);
+    // Extract page name from URL for cleaner display
+    const pageName = pageUrl.split("/").filter(Boolean).pop() || "home";
+    console.log(`\n  Page: ${pageName}`);
+    console.log(`  URL: ${pageUrl}`);
+    console.log(`  Issues: ${links.length} broken link(s)\n`);
 
     links.forEach((link, index) => {
-      console.log(
-        `     ${index + 1}. [${(link.type || "LINK").toUpperCase()}] ${link.url || link.brokenUrl}`
-      );
-      if (link.suggestedFix) {
-        console.log(`        → Suggested: ${link.suggestedFix}`);
+      const typeLabel = (link.type || "link").toUpperCase();
+      const linkText = link.altText || "Unknown";
+      console.log(`     ${index + 1}. [${typeLabel}] "${linkText}"`);
+      console.log(`        URL: ${link.url || link.brokenUrl}`);
+      if (link.error) {
+        console.log(`        Error: ${link.error}`);
+      }
+      if (link.statusCode) {
+        console.log(`        Status: HTTP ${link.statusCode}`);
       }
     });
   }
@@ -1661,7 +1865,7 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
 
 // Scan current page for download links**
 async function scanPageForDownloads(page: Page, pageName: string) {
-  console.log(`🔍 Scanning "${pageName}" for download links...`);
+  console.log(`[SCAN] Scanning "${pageName}" for download links...`);
 
   const downloadLinks = await page.evaluate((downloadSelectors) => {
     const downloads: Array<{
@@ -1669,6 +1873,7 @@ async function scanPageForDownloads(page: Page, pageName: string) {
       href: string;
       fullText: string;
       isDownload: boolean;
+      isMalformed?: boolean;
     }> = [];
 
     // Enhanced selectors for download links on the current page
@@ -1694,6 +1899,11 @@ async function scanPageForDownloads(page: Page, pageName: string) {
           const text = link.textContent?.trim() || "";
           if (!text) continue;
 
+          // Check for malformed URLs (path incorrectly concatenated with external URL)
+          const isMalformedUrl =
+            (href.includes("https://") && !href.startsWith("https://")) ||
+            (href.includes("http://") && !href.startsWith("http://") && !href.startsWith("https://"));
+
           // Determine if this is actually a download
           const isDownload =
             href.includes(".pdf") ||
@@ -1712,7 +1922,11 @@ async function scanPageForDownloads(page: Page, pageName: string) {
             text.toLowerCase().includes("stills") ||
             text.toLowerCase().includes("high-res") ||
             text.toLowerCase().includes("assets") ||
-            link.hasAttribute("download");
+            link.hasAttribute("download") ||
+            // Bynder Brand Portal transfer URLs (external download service)
+            href.includes("brandportal.tommy.com/transfer") ||
+            href.includes("/transfer/") ||
+            isMalformedUrl;
 
           if (isDownload && !downloads.some((d) => d.href === href)) {
             downloads.push({
@@ -1720,6 +1934,7 @@ async function scanPageForDownloads(page: Page, pageName: string) {
               href,
               fullText: text,
               isDownload: true,
+              isMalformed: isMalformedUrl,
             });
           }
         }
@@ -1732,13 +1947,14 @@ async function scanPageForDownloads(page: Page, pageName: string) {
   }, DOWNLOAD_SELECTORS);
 
   if (downloadLinks.length > 0) {
-    console.log(`📥 Found ${downloadLinks.length} download links on "${pageName}":`);
+    console.log(`[FOUND] Found ${downloadLinks.length} download links on "${pageName}":`);
     downloadLinks.forEach((link, idx) => {
-      console.log(`   ${idx + 1}. 📥 ${link.text} (${link.href})`);
+      const malformedWarning = link.isMalformed ? " [MALFORMED URL]" : "";
+      console.log(`   ${idx + 1}. [DL] ${link.text} (${link.href})${malformedWarning}`);
     });
     return downloadLinks;
   } else {
-    console.log(`📥 No download links found on "${pageName}"`);
+    console.log(`[INFO] No download links found on "${pageName}"`);
     return [];
   }
 }

@@ -91,12 +91,20 @@ export const DOWNLOAD_KEYWORDS = [
   "mercedes_amg",
   "clarence_ruth",
   "clarence-ruth",
+  // Bynder Brand Portal transfer URLs (external download service)
+  "brandportal.tommy.com/transfer",
+  "/transfer/",
 ] as const;
 
 export const VIDEO_SELECTORS =
   'video source, iframe[src*="youtube"], iframe[src*="vimeo"], a[href*=".mp4"], a[href*=".mov"], a[href*=".webm"]';
 
-export const CRITICAL_SELECTORS = ["h1", "main", ".content", ".container"] as const;
+export const CRITICAL_SELECTORS = [
+  "h1",
+  "main",
+  ".content",
+  ".container",
+] as const;
 
 export const REQUEST_HEADERS = {
   "User-Agent":
@@ -131,6 +139,10 @@ export const DOWNLOAD_SELECTORS = [
   'a[href*="press.zip"]',
   'a[href*="gallery.zip"]',
 
+  // Bynder Brand Portal transfer URLs (external download service)
+  'a[href*="brandportal.tommy.com/transfer"]',
+  'a[href*="/transfer/"]',
+
   // Text-based detection
   'a:has-text("download")',
   'a:has-text("Download")',
@@ -155,11 +167,11 @@ export const DOWNLOAD_SELECTORS = [
 ] as const;
 
 export const TIMEOUTS = {
-  PAGE_LOAD: 60000,
-  NAVIGATION: 30000,
-  RESOURCE_CHECK: 30000,
-  DOWNLOAD: 60000,
-  RESOURCE_CHECK_SILENT: 5000,
+  PAGE_LOAD: 60000, // 60 seconds
+  NAVIGATION: 30000, // 30 seconds
+  RESOURCE_CHECK: 30000, // 30 seconds
+  DOWNLOAD: 60000, // 60 seconds
+  RESOURCE_CHECK_SILENT: 5000, // 5 seconds
 } as const;
 
 export const RETRY_CONFIG = {

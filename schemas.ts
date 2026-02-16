@@ -141,6 +141,7 @@ export const BrokenLinkSchema = z
     error: z.string().max(500).optional(),
     pageUrl: z.string().optional(),
     brokenUrl: z.string().optional(),
+    retriesAttempted: z.number().int().min(0).max(10).optional(),
   })
   .describe("Broken link information");
 
