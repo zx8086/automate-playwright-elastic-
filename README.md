@@ -10,15 +10,18 @@ A comprehensive Playwright-based automation tool for press kit navigation analys
 
 ## Features
 
+- **Site-Agnostic Design**: Works with any press kit website without brand-specific configuration
 - **Broken Image Detection**: Advanced browser-based validation that detects failed image loads on any website
+- **Malformed URL Detection**: Identifies incorrectly concatenated URLs (e.g., `/pathhttps://example.com`)
 - **Intelligent Press Kit Navigation**: Discovers and navigates through all press kit links with enhanced detection
 - **Smart Asset Discovery & Download**: Identifies and downloads press kit assets (PDFs, images, videos, etc.)
+- **External Transfer URL Support**: Validates and processes external asset transfer links
 - **Duplicate Prevention**: Prevents processing the same URLs and downloads multiple times
 - **Screenshot Capture**: Takes screenshots of each page for visual documentation
 - **Elastic Synthetics Integration**: Automatically generates monitoring tests with image validation
 - **Configurable & Environment-aware**: Supports multiple environments with flexible configuration
 - **Visual Sitemap Generation**: Creates HTML sitemaps showing press kit structure
-- **Comprehensive Reporting**: Detailed navigation summaries with broken image reports
+- **Comprehensive Reporting**: Detailed navigation summaries with broken image and link reports
 - **Lazy Loading Support**: Handles modern websites with lazy-loaded and dynamically loaded content
 
 ## Table of Contents
@@ -26,10 +29,12 @@ A comprehensive Playwright-based automation tool for press kit navigation analys
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+- [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Environment Variables](#environment-variables)
 - [Output Files](#output-files)
 - [Broken Image Detection](#broken-image-detection)
+- [Malformed URL Detection](#malformed-url-detection)
 - [Elastic Synthetics Integration](#elastic-synthetics-integration)
 - [Supported File Types](#supported-file-types)
 - [Development](#development)
@@ -126,11 +131,37 @@ Set environment variables for different configurations:
 
 ```bash
 # Production environment
-ENVIRONMENT=production BASE_URL=https://prod.example.com bun run test
+ENVIRONMENT=production BASE_URL=https://presskit.example.com/Campaign/ bun run test
 
 # Development environment
-ENVIRONMENT=development BASE_URL=https://dev.example.com bun run  test
+ENVIRONMENT=development BASE_URL=https://dev.presskit.example.com/Campaign/ bun run test
+
+# Test different press kit sites
+BASE_URL=https://www.prd.presskits.example.com/campaign-name/ bun run test
+BASE_URL=https://www.dev.presskits.example.com/campaign-name/ bun run test
 ```
+
+## Architecture
+
+The project follows a modular architecture with clear separation of concerns:
+
+### Core Modules
+
+| Module | Purpose |
+|--------|---------|
+| **core/** | Shared types, HTTP client, and retry logic |
+| **validation/** | URL and image validation utilities |
+| **navigation/** | Page navigation and element discovery |
+| **download/** | Asset download orchestration |
+| **reporting/** | Broken link report generation |
+
+### Design Principles
+
+- **Site-Agnostic**: No hardcoded brand or domain patterns
+- **Generic URL Detection**: Uses pattern-based detection for external URLs
+- **Single Responsibility**: Each module handles one concern
+- **Type Safety**: Comprehensive TypeScript types with guards
+- **Configurable**: All behavior controlled via environment variables
 
 ## Project Structure
 
@@ -138,17 +169,45 @@ ENVIRONMENT=development BASE_URL=https://dev.example.com bun run  test
 automate-playwright-elastic/
 ├── src/
 │   ├── playwright.spec.ts          # Main test suite with navigation logic
-│   ├── constants.ts                # Centralized constants and configuration
-│   ├── download-detector.ts        # Download detection and validation logic
+│   ├── constants.ts                # Centralized constants and selectors
+│   ├── download-detector.ts        # Download detection and validation
 │   ├── test-state.ts               # Global test state management
 │   ├── utils.ts                    # Utility functions and helpers
-│   └── synthetics-generator.ts     # Elastic Synthetics test generation
+│   ├── synthetics-generator.ts     # Elastic Synthetics test generation
+│   │
+│   ├── core/                       # Core shared functionality
+│   │   ├── index.ts                # Module exports
+│   │   ├── types.ts                # Shared TypeScript interfaces
+│   │   ├── http-client.ts          # HTTP operations with retry
+│   │   └── retry-handler.ts        # Generic retry logic
+│   │
+│   ├── validation/                 # Validation utilities
+│   │   ├── index.ts                # Module exports
+│   │   ├── url-validator.ts        # URL validation (malformed, external)
+│   │   └── image-validator.ts      # Image validation (browser + HTTP)
+│   │
+│   ├── navigation/                 # Navigation discovery
+│   │   ├── index.ts                # Module exports
+│   │   ├── navigation-handler.ts   # Navigation item discovery
+│   │   └── page-scanner.ts         # Page element scanning
+│   │
+│   ├── download/                   # Download management
+│   │   ├── index.ts                # Module exports
+│   │   └── download-manager.ts     # Download orchestration
+│   │
+│   └── reporting/                  # Report generation
+│       ├── index.ts                # Module exports
+│       └── report-generator.ts     # Broken links report generation
+│
 ├── config.ts                       # Configuration management with Zod v4
+├── schemas.ts                      # Zod validation schemas
 ├── global-setup.ts                 # Global test setup
 ├── playwright.config.ts            # Playwright configuration
+├── biome.json                      # Biome linting configuration
 ├── .env.example                    # Environment template
 ├── package.json                    # Dependencies and scripts
 ├── tsconfig.json                   # TypeScript configuration
+│
 ├── navigation-screenshots/         # Generated screenshots
 ├── downloads/                      # Downloaded assets
 ├── synthetics/                     # Elastic Synthetics outputs
@@ -193,6 +252,14 @@ Configure the application using these environment variables in your `.env` file:
 |----------|-------------|---------|
 | `MAX_DOWNLOAD_SIZE` | Maximum file size in bytes | `104857600` (100MB) |
 
+### Validation Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MAX_IMAGES_TO_VALIDATE` | Max images to validate per page | `200` |
+| `MAX_VIDEOS_TO_VALIDATE` | Max videos to validate per page | `50` |
+| `VALIDATE_ASSET_IMAGES` | Enable asset image validation | `true` |
+
 ## Output Files
 
 The automation generates several types of output files:
@@ -224,8 +291,8 @@ The automation generates several types of output files:
 - **Location**: `broken-links-reports/` directory
 - **JSON Format**: `broken-links-<timestamp>.json` - Structured data for processing
 - **Markdown Format**: `broken-links-<timestamp>.md` - Human-readable report
-- **Content**: Detailed information about broken images and assets
-- **Details**: URL, alt text, error messages, HTTP status codes
+- **Latest**: `broken-links-latest.json` - Most recent report
+- **Content**: Detailed information about broken images and malformed URLs
 
 ## Broken Image Detection
 
@@ -246,21 +313,46 @@ The tool includes advanced broken image detection capabilities that work on any 
    - Waits for lazy-loaded images to initialize
    - Detects dynamically loaded images via JavaScript
 
-4. **Comprehensive Reporting**
-   - Alt text for context
-   - Parent element information
-   - Detailed error messages
-   - HTTP status codes when available
+4. **HTTP Validation**
+   - Verifies image URLs return valid responses
+   - Reports HTTP status codes for failed images
 
 ### Example Output
 
 ```
-🔍 Validating images on "Model Page"...
+[VALIDATE] Validating images on "Model Page"...
    Found 14 images on page
-   ❌ Browser detected 1 broken images
-   ❌ [1] https://example.com/models/image.gif
+   Validating 14 of 14 browser-loaded images via HTTP...
+Found 1 broken images on "Model Page"
+  [1] https://example.com/models/image.gif
       Alt: "Model Name"
-      Error: Failed to load in browser (naturalWidth=0, complete=true)
+      Error: All verification attempts failed
+```
+
+## Malformed URL Detection
+
+The tool detects malformed URLs where paths are incorrectly concatenated with external URLs:
+
+### Detection Pattern
+
+```
+Malformed: /campaign-pathhttps://external.com/transfer/abc123
+Correct:   https://external.com/transfer/abc123
+```
+
+### How It Works
+
+1. **Pattern Detection**: Identifies URLs containing `https://` or `http://` that don't start with the protocol
+2. **URL Extraction**: Can extract the correct external URL from malformed ones
+3. **Reporting**: Reports malformed URLs in broken links reports with detailed context
+
+### Example Output
+
+```
+[BROKEN] Malformed URL detected on "Assets" page
+   Link text: "Download"
+   Broken href: /CampaignNamehttps://external.com/transfer/abc123
+   Error: Malformed URL - path incorrectly concatenated with external URL
 ```
 
 ## Elastic Synthetics Integration
@@ -273,6 +365,7 @@ The project automatically generates monitoring tests compatible with Elastic Syn
 - **Fallback Mechanisms**: Direct navigation when clicking fails
 - **Environment Tagging**: Automatic tagging based on configuration
 - **Monitoring Configuration**: Schedule, screenshots, and throttling settings
+- **Image Validation**: Built-in broken image detection steps
 
 ### Test Structure
 
@@ -334,6 +427,19 @@ bun run test src/playwright.spec.ts
 ENVIRONMENT=staging bun run test
 ```
 
+### Code Quality
+
+```bash
+# Type checking
+bun run typecheck
+
+# Linting and formatting
+bun run biome:check
+
+# Auto-fix linting issues
+bun run biome:check:write
+```
+
 ### Configuration Validation
 
 The project uses Zod for configuration validation:
@@ -349,18 +455,19 @@ Add selectors to the `NAVIGATION_SELECTORS` array in `src/constants.ts`:
 
 ```typescript
 export const NAVIGATION_SELECTORS = [
-    // Press kit specific selectors
-    ".press-kit-nav a", ".presskit-nav a", ".pk-nav a",
+    // Standard navigation
+    "nav a", "header a", ".menu a",
 
-    // Tommy Hilfiger specific patterns
+    // Press kit specific selectors
+    ".press-kit-nav a", ".presskit-nav a",
+
+    // File type patterns
     'a[href*=".html"]',  // Page links
     'a[href*=".pdf"]',   // PDF downloads
     'a[href*=".zip"]',   // ZIP downloads
-    'a[href*="/assets/"]', // Asset downloads
 
     // Add new selectors here
     ".your-new-selector a",
-    // ...existing selectors
 ] as const;
 ```
 
@@ -400,8 +507,16 @@ allowedDownloads: {
 **Problem**: "No navigation items found"
 **Solution**:
 - Check if the press kit uses custom navigation selectors
-- Add site-specific selectors to `identifyNavigation` function
+- Add site-specific selectors to `NAVIGATION_SELECTORS` in constants
 - Verify the press kit loads correctly
+
+#### Malformed URLs Detected
+**Problem**: URLs reported as malformed
+**Solution**:
+- This indicates a real issue in the source website
+- The URL path is incorrectly concatenated with an external URL
+- Report the issue to the website maintainers
+- The tool correctly extracts the embedded URL for validation
 
 #### Download Failures
 **Problem**: Downloads fail or are skipped
@@ -465,6 +580,14 @@ VIDEO_MODE=off bun run test
 
 ## Recent Updates
 
+### Version 2.2 - Site-Agnostic Modular Architecture
+- **Site-agnostic design**: Removed all brand-specific patterns and hardcoding
+- **Generic URL detection**: Uses pattern-based detection for external transfer URLs
+- **Malformed URL detection**: Identifies incorrectly concatenated URLs
+- **New modules**: core/, validation/, navigation/, download/, reporting/
+- **Type safety**: Comprehensive TypeScript interfaces with type guards
+- **Code quality**: Biome linting integration
+
 ### Version 2.1 - Modular Architecture & Constants Centralization
 - Complete refactoring into modular architecture with 31% reduction in main file size
 - Centralized all constants in `src/constants.ts` for better maintainability
@@ -493,9 +616,10 @@ VIDEO_MODE=off bun run test
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/new-feature`
 3. Make changes and test: `bun run test`
-4. Commit changes: `git commit -am 'Add new feature'`
-5. Push to branch: `git push origin feature/new-feature`
-6. Submit a pull request
+4. Run linting: `bun run biome:check:write`
+5. Commit changes: `git commit -am 'Add new feature'`
+6. Push to branch: `git push origin feature/new-feature`
+7. Submit a pull request
 
 ## License
 
