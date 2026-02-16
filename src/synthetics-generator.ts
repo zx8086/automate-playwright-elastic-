@@ -46,11 +46,11 @@ interface PageLoadOptions {
 }
 
 interface PerformanceMetrics {
-  navigationTiming?: any;
-  paintTiming?: any[];
-  lcp?: any;
-  cls?: any;
-  longTasks?: any[];
+  navigationTiming?: PerformanceNavigationTiming | null;
+  paintTiming?: PerformanceEntry[];
+  lcp?: PerformanceEntry | null;
+  cls?: PerformanceEntry | null;
+  longTasks?: PerformanceEntry[];
 }`;
 }
 

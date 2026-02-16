@@ -178,7 +178,8 @@ test.describe("Site Navigation Test with Steps", () => {
             }
 
             // Verify the resource exists and get content length
-            const { exists, contentLength, statusCode, error, retriesAttempted } = await verifyResourceExists(absoluteUrl);
+            const { exists, contentLength, statusCode, error, retriesAttempted } =
+              await verifyResourceExists(absoluteUrl);
 
             if (exists) {
               console.log(`Resource ${item.text} exists and is accessible`);
@@ -393,7 +394,13 @@ test.describe("Site Navigation Test with Steps", () => {
                   );
                   try {
                     // Verify the resource exists
-                    const { exists, contentLength, statusCode, error: verifyError, retriesAttempted } = await verifyResourceExists(downloadUrl);
+                    const {
+                      exists,
+                      contentLength,
+                      statusCode,
+                      error: verifyError,
+                      retriesAttempted,
+                    } = await verifyResourceExists(downloadUrl);
                     if (exists) {
                       console.log(
                         `Download resource ${downloadLink.text} exists and is accessible`
@@ -456,7 +463,9 @@ test.describe("Site Navigation Test with Steps", () => {
                       const errorReason = statusCode
                         ? `HTTP ${statusCode}${verifyError ? `: ${verifyError}` : ""}`
                         : verifyError || "Resource not accessible";
-                      console.log(`[BROKEN] Download resource not accessible: ${downloadUrl} (${errorReason})`);
+                      console.log(
+                        `[BROKEN] Download resource not accessible: ${downloadUrl} (${errorReason})`
+                      );
 
                       // Add to broken links for reporting
                       const brokenLink: BrokenLink = {
@@ -1332,7 +1341,9 @@ async function verifyResourceExists(
   while (currentRetry < maxRetries) {
     try {
       if (!silent) {
-        console.log(`[VERIFY] Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`);
+        console.log(
+          `[VERIFY] Resource verification attempt ${currentRetry + 1}/${maxRetries}: ${url}`
+        );
       }
 
       const result = await new Promise<{
@@ -1902,7 +1913,9 @@ async function scanPageForDownloads(page: Page, pageName: string) {
           // Check for malformed URLs (path incorrectly concatenated with external URL)
           const isMalformedUrl =
             (href.includes("https://") && !href.startsWith("https://")) ||
-            (href.includes("http://") && !href.startsWith("http://") && !href.startsWith("https://"));
+            (href.includes("http://") &&
+              !href.startsWith("http://") &&
+              !href.startsWith("https://"));
 
           // Determine if this is actually a download
           const isDownload =

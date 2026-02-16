@@ -66,10 +66,13 @@ export const NAVIGATION_SELECTORS = [
 ] as const;
 
 export const DOWNLOAD_KEYWORDS = [
+  // Generic download path patterns
   "/download",
   "/files/",
   "/media/",
   "/press/",
+
+  // Common archive filenames
   "product.zip",
   "stills.zip",
   "images.zip",
@@ -77,34 +80,27 @@ export const DOWNLOAD_KEYWORDS = [
   "gallery.zip",
   "press.zip",
   "campaign.zip",
+
+  // Press kit related patterns
   "press_release",
   "press-release",
   "presskit",
+  "press_kit",
+  "press-kit",
+
+  // High-resolution asset patterns
   "high-res",
   "highres",
   "high_res",
-  "press_kit",
-  "press-kit",
-  "tommy_hilfiger",
-  "tommy-hilfiger",
-  "mercedes-amg",
-  "mercedes_amg",
-  "clarence_ruth",
-  "clarence-ruth",
-  // Bynder Brand Portal transfer URLs (external download service)
-  "brandportal.tommy.com/transfer",
+
+  // External transfer URL pattern (generic)
   "/transfer/",
 ] as const;
 
 export const VIDEO_SELECTORS =
   'video source, iframe[src*="youtube"], iframe[src*="vimeo"], a[href*=".mp4"], a[href*=".mov"], a[href*=".webm"]';
 
-export const CRITICAL_SELECTORS = [
-  "h1",
-  "main",
-  ".content",
-  ".container",
-] as const;
+export const CRITICAL_SELECTORS = ["h1", "main", ".content", ".container"] as const;
 
 export const REQUEST_HEADERS = {
   "User-Agent":
@@ -119,19 +115,19 @@ export const REQUEST_HEADERS = {
 } as const;
 
 export const DOWNLOAD_SELECTORS = [
-  // Direct download links
+  // Direct download links by file extension
   'a[href*=".zip"]',
   'a[href*=".pdf"]',
   'a[href*=".rar"]',
   'a[href*=".7z"]',
 
-  // Links with download keywords
+  // Links with generic download path patterns
   'a[href*="download"]',
   'a[href*="assets/"]',
   'a[href*="media/"]',
   'a[href*="files/"]',
 
-  // Press kit specific patterns
+  // Common archive filename patterns
   'a[href*="product.zip"]',
   'a[href*="stills.zip"]',
   'a[href*="images.zip"]',
@@ -139,11 +135,10 @@ export const DOWNLOAD_SELECTORS = [
   'a[href*="press.zip"]',
   'a[href*="gallery.zip"]',
 
-  // Bynder Brand Portal transfer URLs (external download service)
-  'a[href*="brandportal.tommy.com/transfer"]',
+  // External transfer URL pattern (generic)
   'a[href*="/transfer/"]',
 
-  // Text-based detection
+  // Text-based detection (case variations)
   'a:has-text("download")',
   'a:has-text("Download")',
   'a:has-text("DOWNLOAD")',
@@ -155,7 +150,7 @@ export const DOWNLOAD_SELECTORS = [
   ".download-btn",
   ".asset-download",
 
-  // Press kit specific text patterns
+  // Content text patterns
   'a:has-text("stills")',
   'a:has-text("Stills")',
   'a:has-text("STILLS")',
