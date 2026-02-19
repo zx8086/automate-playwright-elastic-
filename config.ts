@@ -23,9 +23,9 @@ import {
 } from "./schemas";
 
 // Environment detection and setup
-if (typeof Bun === "undefined") {
-  dotenv.config();
-}
+// Use quiet mode to suppress dotenv's logging messages (which include emojis)
+// Always call dotenv.config with quiet:true to prevent emoji-laden tip messages
+dotenv.config({ quiet: true });
 
 // ============================================================================
 // UTILITY FUNCTIONS

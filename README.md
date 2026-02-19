@@ -13,9 +13,9 @@ A comprehensive Playwright-based automation tool for press kit navigation analys
 - **Site-Agnostic Design**: Works with any press kit website without brand-specific configuration
 - **Broken Image Detection**: Advanced browser-based validation that detects failed image loads on any website
 - **Malformed URL Detection**: Identifies incorrectly concatenated URLs (e.g., `/pathhttps://example.com`)
+- **External Transfer Support**: Handles browser-based downloads from transfer services (Bynder, WeTransfer, etc.)
 - **Intelligent Press Kit Navigation**: Discovers and navigates through all press kit links with enhanced detection
 - **Smart Asset Discovery & Download**: Identifies and downloads press kit assets (PDFs, images, videos, etc.)
-- **External Transfer URL Support**: Validates and processes external asset transfer links
 - **Duplicate Prevention**: Prevents processing the same URLs and downloads multiple times
 - **Screenshot Capture**: Takes screenshots of each page for visual documentation
 - **Elastic Synthetics Integration**: Automatically generates monitoring tests with image validation
@@ -35,6 +35,7 @@ A comprehensive Playwright-based automation tool for press kit navigation analys
 - [Output Files](#output-files)
 - [Broken Image Detection](#broken-image-detection)
 - [Malformed URL Detection](#malformed-url-detection)
+- [External Transfer Downloads](#external-transfer-downloads)
 - [Elastic Synthetics Integration](#elastic-synthetics-integration)
 - [Supported File Types](#supported-file-types)
 - [Development](#development)
@@ -77,6 +78,7 @@ cp .env.example .env
 The project uses a flexible configuration system that combines default values with environment variables. Configuration is managed through:
 
 - **Default values** in `config.ts`
+- **Schema validation** in `schemas.ts` using Zod v4
 - **Environment variables** from `.env` file
 - **Runtime overrides** via environment variables
 
@@ -152,7 +154,7 @@ The project follows a modular architecture with clear separation of concerns:
 | **core/** | Shared types, HTTP client, and retry logic |
 | **validation/** | URL and image validation utilities |
 | **navigation/** | Page navigation and element discovery |
-| **download/** | Asset download orchestration |
+| **download/** | Asset download orchestration and transfer handling |
 | **reporting/** | Broken link report generation |
 
 ### Design Principles
@@ -167,51 +169,57 @@ The project follows a modular architecture with clear separation of concerns:
 
 ```
 automate-playwright-elastic/
-├── src/
-│   ├── playwright.spec.ts          # Main test suite with navigation logic
-│   ├── constants.ts                # Centralized constants and selectors
-│   ├── download-detector.ts        # Download detection and validation
-│   ├── test-state.ts               # Global test state management
-│   ├── utils.ts                    # Utility functions and helpers
-│   ├── synthetics-generator.ts     # Elastic Synthetics test generation
-│   │
-│   ├── core/                       # Core shared functionality
-│   │   ├── index.ts                # Module exports
-│   │   ├── types.ts                # Shared TypeScript interfaces
-│   │   ├── http-client.ts          # HTTP operations with retry
-│   │   └── retry-handler.ts        # Generic retry logic
-│   │
-│   ├── validation/                 # Validation utilities
-│   │   ├── index.ts                # Module exports
-│   │   ├── url-validator.ts        # URL validation (malformed, external)
-│   │   └── image-validator.ts      # Image validation (browser + HTTP)
-│   │
-│   ├── navigation/                 # Navigation discovery
-│   │   ├── index.ts                # Module exports
-│   │   ├── navigation-handler.ts   # Navigation item discovery
-│   │   └── page-scanner.ts         # Page element scanning
-│   │
-│   ├── download/                   # Download management
-│   │   ├── index.ts                # Module exports
-│   │   └── download-manager.ts     # Download orchestration
-│   │
-│   └── reporting/                  # Report generation
-│       ├── index.ts                # Module exports
-│       └── report-generator.ts     # Broken links report generation
-│
-├── config.ts                       # Configuration management with Zod v4
-├── schemas.ts                      # Zod validation schemas
-├── global-setup.ts                 # Global test setup
-├── playwright.config.ts            # Playwright configuration
-├── biome.json                      # Biome linting configuration
-├── .env.example                    # Environment template
-├── package.json                    # Dependencies and scripts
-├── tsconfig.json                   # TypeScript configuration
-│
-├── navigation-screenshots/         # Generated screenshots
-├── downloads/                      # Downloaded assets
-├── synthetics/                     # Elastic Synthetics outputs
-└── broken-links-reports/           # Broken image and asset reports
+  src/
+    playwright.spec.ts          # Main test suite with navigation logic
+    constants.ts                # Centralized constants and selectors
+    download-detector.ts        # Download detection and validation
+    test-state.ts               # Global test state management
+    utils.ts                    # Utility functions and helpers
+    synthetics-generator.ts     # Elastic Synthetics test generation
+
+    core/                       # Core shared functionality
+      index.ts                  # Module exports
+      types.ts                  # Shared TypeScript interfaces
+      http-client.ts            # HTTP operations with retry
+      retry-handler.ts          # Generic retry logic
+
+    validation/                 # Validation utilities
+      index.ts                  # Module exports
+      url-validator.ts          # URL validation (malformed, external)
+      image-validator.ts        # Image validation (browser + HTTP)
+
+    navigation/                 # Navigation discovery
+      index.ts                  # Module exports
+      navigation-handler.ts     # Navigation item discovery
+      page-scanner.ts           # Page element scanning
+
+    download/                   # Download management
+      index.ts                  # Module exports
+      download-manager.ts       # Download orchestration
+      transfer-handler.ts       # External transfer page downloads
+
+    reporting/                  # Report generation
+      index.ts                  # Module exports
+      report-generator.ts       # Broken links report generation
+
+  config.ts                     # Configuration management with Zod v4
+  schemas.ts                    # Zod validation schemas
+  global-setup.ts               # Global test setup
+  playwright.config.ts          # Playwright configuration
+  biome.json                    # Biome linting configuration
+  .env.example                  # Environment template
+  package.json                  # Dependencies and scripts
+  tsconfig.json                 # TypeScript configuration
+
+  guides/                       # Documentation guides
+    CONFIGURATION_ARCHITECTURE.md
+    ELASTIC_SYNTHETICS_TESTING.md
+    ZOD_V4_MIGRATION.md
+
+  navigation-screenshots/       # Generated screenshots
+  downloads/                    # Downloaded assets
+  synthetics/                   # Elastic Synthetics outputs
+  broken-links-reports/         # Broken image and asset reports
 ```
 
 ## Environment Variables
@@ -355,6 +363,41 @@ Correct:   https://external.com/transfer/abc123
    Error: Malformed URL - path incorrectly concatenated with external URL
 ```
 
+## External Transfer Downloads
+
+The tool supports browser-based downloads from external transfer services:
+
+### Supported Transfer Services
+
+The transfer handler is site-agnostic and works with any service that:
+- Uses `/transfer/` URL pattern
+- Provides download buttons/links on the page
+- May require user interaction to start downloads
+
+Common services include:
+- Bynder Brand Portal
+- WeTransfer
+- Dropbox
+- Google Drive
+- Custom enterprise transfer services
+
+### How It Works
+
+1. **URL Detection**: Identifies external transfer URLs by pattern (e.g., `/transfer/{id}`)
+2. **Page Analysis**: Navigates to the transfer page and analyzes for download configuration
+3. **Download Extraction**: Finds download buttons, direct links, or JavaScript-based downloads
+4. **Browser Download**: Uses Playwright's download handling to save files
+
+### Example Output
+
+```
+[TRANSFER] Starting browser-based download for: https://transfer.example.com/transfer/abc123
+[TRANSFER] Page analysis result:
+   File: campaign-assets.zip
+   Direct URL found: https://cdn.example.com/files/abc123/campaign-assets.zip
+[TRANSFER] Successfully downloaded: campaign-assets.zip (156.7 MB)
+```
+
 ## Elastic Synthetics Integration
 
 The project automatically generates monitoring tests compatible with Elastic Synthetics:
@@ -442,7 +485,7 @@ bun run biome:check:write
 
 ### Configuration Validation
 
-The project uses Zod for configuration validation:
+The project uses Zod v4 for configuration validation:
 
 ```typescript
 // Configuration is automatically validated on startup
@@ -526,6 +569,14 @@ allowedDownloads: {
 - Ensure sufficient disk space
 - Check network connectivity
 
+#### Transfer Page Downloads Fail
+**Problem**: External transfer links fail to download
+**Solution**:
+- Transfer links may have expired
+- Check if the transfer service requires authentication
+- Verify network access to the transfer service
+- Try regenerating the transfer link
+
 #### Configuration Errors
 **Problem**: "Configuration validation failed"
 **Solution**:
@@ -535,10 +586,22 @@ allowedDownloads: {
 - Review `.env` file syntax
 
 #### Playwright Browser Issues
-**Problem**: Browser launch failures
+**Problem**: Browser launch failures after upgrading Playwright
 **Solution**:
+
+When you upgrade `@playwright/test` or `playwright` packages, the browser binaries need to be reinstalled because each Playwright version bundles specific browser versions.
+
+Error message typically looks like:
+```
+Error: browserType.launch: Executable doesn't exist at .../ms-playwright/chromium-XXXX/...
+```
+
+Fix:
 ```bash
-# Reinstall browsers
+# Reinstall browsers (automatic via postinstall hook)
+bun install
+
+# Or manually reinstall browsers
 bunx playwright install
 
 # Install system dependencies (Linux)
@@ -547,6 +610,8 @@ bunx playwright install-deps
 # Check browser status
 bunx playwright doctor
 ```
+
+**Prevention**: The project has a `postinstall` script that automatically runs `bunx playwright install` after any `bun install` or `bun update`.
 
 ### Debug Mode
 
@@ -579,6 +644,13 @@ VIDEO_MODE=off bun run test
 ```
 
 ## Recent Updates
+
+### Version 2.3 - External Transfer Download Support
+- **Transfer Handler Module**: New `transfer-handler.ts` for browser-based downloads
+- **Site-agnostic Transfer Detection**: Works with any transfer service using `/transfer/` pattern
+- **Page Analysis**: Extracts download configuration from transfer pages
+- **Multiple Download Strategies**: Direct URL downloads and button click handling
+- **Improved Error Handling**: Better detection of expired or invalid transfer links
 
 ### Version 2.2 - Site-Agnostic Modular Architecture
 - **Site-agnostic design**: Removed all brand-specific patterns and hardcoding

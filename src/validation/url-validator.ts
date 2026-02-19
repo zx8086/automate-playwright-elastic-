@@ -3,6 +3,9 @@
 /**
  * URL validation utilities.
  * Provides generic, site-agnostic URL validation functions.
+ *
+ * This module is designed to work with ANY website, not just specific services.
+ * All detection is based on generic patterns rather than hardcoded domains.
  */
 
 import { DOWNLOAD_KEYWORDS } from "../constants";
@@ -52,20 +55,36 @@ export function extractEmbeddedUrl(malformedUrl: string): string | null {
 // ============================================================================
 
 /**
- * Check if a URL is an external transfer URL (e.g., Bynder-style download service)
+ * Check if a URL is an external transfer URL (e.g., Bynder, WeTransfer, Dropbox, etc.)
  * These URLs return HTML pages that render a download interface, not direct files.
  *
- * Detection is based on generic patterns:
- * - Contains "/transfer/" in the path
- * - Does not end with just "/transfer/" (must have an ID after)
+ * Detection is based on generic patterns that work with ANY transfer service:
+ * - Contains "/transfer/" in the path (common pattern: /transfer/{id})
+ * - Contains "/share/" with a long hash/ID (common for sharing services)
+ * - Contains "/dl/" or "/download/" with a hash/ID
+ *
+ * This function is site-agnostic and does NOT check for specific domains.
  */
 export function isExternalTransferUrl(url: string): boolean {
-  // Generic detection: look for /transfer/ pattern with something after it
+  // Generic transfer path patterns
+  const transferPatterns = [
+    // /transfer/{id} - Bynder, custom services
+    /\/transfer\/[a-f0-9]{16,}/i,
+    // /share/{id} - WeTransfer, Google Drive, etc.
+    /\/share\/[a-zA-Z0-9_-]{8,}/i,
+    // /dl/{id} - Dropbox, OneDrive
+    /\/dl\/[a-zA-Z0-9_-]{8,}/i,
+    // /d/{id} - Google Drive pattern
+    /\/d\/[a-zA-Z0-9_-]{20,}/i,
+  ];
+
+  // Check if URL matches any transfer pattern
+  const matchesPattern = transferPatterns.some((pattern) => pattern.test(url));
+
+  // Additional check: /transfer/ with something after it (less strict)
   const hasTransferPath = url.includes("/transfer/") && !url.endsWith("/transfer/");
 
-  // Check if the URL matches any known transfer patterns
-  // This is generic and will match any service using /transfer/ URLs
-  return hasTransferPath;
+  return matchesPattern || hasTransferPath;
 }
 
 /**
@@ -73,54 +92,123 @@ export function isExternalTransferUrl(url: string): boolean {
  * This looks for common patterns in download service pages:
  * - Download configuration data (downloadId, downloadHash, fileName)
  * - Error messages (expired, invalid, Access Denied)
+ *
+ * This function is site-agnostic and works with various transfer services:
+ * - Bynder Brand Portal
+ * - WeTransfer
+ * - Dropbox
+ * - Google Drive
+ * - Custom enterprise transfer services
  */
 export function parseExternalTransferPage(html: string): ExternalTransferResult {
+  const htmlLower = html.toLowerCase();
+
   // Check for expired/invalid transfer - generic error detection
+  // These patterns are common across all transfer services
   const errorPatterns = [
     "expired",
     "invalid",
     "not found",
-    "Access Denied",
-    "AccessDenied",
-    "Error",
-    "error",
+    "access denied",
+    "accessdenied",
     "unavailable",
     "no longer available",
+    "does not exist",
+    "has been removed",
+    "link has expired",
+    "transfer expired",
+    "file not found",
+    "404",
+    "forbidden",
   ];
 
-  const hasError = errorPatterns.some((pattern) =>
-    html.toLowerCase().includes(pattern.toLowerCase())
-  );
+  // Only consider it an error if these patterns appear prominently
+  // (not just in error handling code)
+  const hasError = errorPatterns.some((pattern) => {
+    const index = htmlLower.indexOf(pattern);
+    if (index === -1) return false;
 
-  // Look for valid download data - common patterns in download services
+    // Check if this is in main content (not in script/style blocks)
+    const beforeText = htmlLower.substring(Math.max(0, index - 100), index);
+    const isInScript = beforeText.includes("<script") && !beforeText.includes("</script");
+    const isInStyle = beforeText.includes("<style") && !beforeText.includes("</style");
+
+    return !isInScript && !isInStyle;
+  });
+
+  // Look for valid download data - common patterns across transfer services
   const fileNamePatterns = [
-    /firstFilename:\s*"([^"]+)"/,
-    /fileName:\s*"([^"]+)"/,
-    /filename:\s*"([^"]+)"/,
-    /data-filename="([^"]+)"/,
-    /name="([^"]+\.(?:zip|pdf|jpg|png|mp4|mov|rar|7z))"/i,
+    // JavaScript variable patterns
+    /firstFilename:\s*["']([^"']+)["']/,
+    /fileName:\s*["']([^"']+)["']/,
+    /filename:\s*["']([^"']+)["']/,
+    /file_name:\s*["']([^"']+)["']/,
+    /"fileName":\s*["']([^"']+)["']/,
+    /"filename":\s*["']([^"']+)["']/,
+
+    // HTML data attributes
+    /data-filename=["']([^"']+)["']/,
+    /data-file-name=["']([^"']+)["']/,
+    /data-name=["']([^"']+)["']/,
+
+    // Download link patterns
+    /download=["']([^"']+)["']/,
+    /title=["']([^"']+\.(?:zip|pdf|jpg|jpeg|png|mp4|mov|rar|7z|doc|docx|xls|xlsx))["']/i,
+
+    // Meta tag patterns
+    /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
+    /<title>([^<]+)<\/title>/i,
+
+    // JSON patterns
+    /"name":\s*["']([^"']+\.(?:zip|pdf|jpg|png|mp4|mov|rar|7z))["']/i,
   ];
 
   const downloadIdPatterns = [
-    /downloadId:\s*"([^"]+)"/,
-    /download_id:\s*"([^"]+)"/,
-    /data-download-id="([^"]+)"/,
-    /id="download-([^"]+)"/,
+    /downloadId:\s*["']([^"']+)["']/,
+    /download_id:\s*["']([^"']+)["']/,
+    /"downloadId":\s*["']([^"']+)["']/,
+    /data-download-id=["']([^"']+)["']/,
+    /data-id=["']([a-f0-9]{16,})["']/i,
+    /id=["']download-([^"']+)["']/,
   ];
 
   const downloadHashPatterns = [
-    /downloadHash:\s*"([^"]+)"/,
-    /download_hash:\s*"([^"]+)"/,
-    /hash:\s*"([^"]+)"/,
+    /downloadHash:\s*["']([^"']+)["']/,
+    /download_hash:\s*["']([^"']+)["']/,
+    /"downloadHash":\s*["']([^"']+)["']/,
+    /hash:\s*["']([a-f0-9]{32,})["']/i,
+    /token:\s*["']([a-zA-Z0-9_-]{20,})["']/,
   ];
 
   let fileName: string | undefined;
+  let fileSize: string | undefined;
 
   // Try to extract filename
   for (const pattern of fileNamePatterns) {
     const match = html.match(pattern);
-    if (match) {
-      fileName = match[1];
+    if (match && match[1]) {
+      // Clean up the filename
+      const candidate = match[1].trim();
+      // Skip if it looks like a path or URL
+      if (!candidate.includes("/") && !candidate.startsWith("http")) {
+        fileName = candidate;
+        break;
+      }
+    }
+  }
+
+  // Try to extract file size
+  const fileSizePatterns = [
+    /fileSize:\s*["']([^"']+)["']/,
+    /size:\s*["'](\d+(?:\.\d+)?\s*(?:KB|MB|GB|bytes))["']/i,
+    /"fileSize":\s*["']([^"']+)["']/,
+    /data-size=["']([^"']+)["']/,
+  ];
+
+  for (const pattern of fileSizePatterns) {
+    const match = html.match(pattern);
+    if (match && match[1]) {
+      fileSize = match[1];
       break;
     }
   }
@@ -136,22 +224,35 @@ export function parseExternalTransferPage(html: string): ExternalTransferResult 
       return {
         isValid: true,
         fileName,
+        fileSize,
       };
     }
   }
 
   // Check for download button or link as fallback
-  const hasDownloadButton =
-    html.includes("download-button") ||
-    html.includes("downloadButton") ||
-    html.includes('class="download"') ||
-    html.includes("Download") ||
-    html.includes("download-link");
+  const downloadButtonPatterns = [
+    "download-button",
+    "downloadbutton",
+    'class="download"',
+    "download-link",
+    "download-btn",
+    "btn-download",
+    'role="download"',
+    ">download<",
+    ">download now<",
+    ">get file<",
+    ">download file<",
+  ];
+
+  const hasDownloadButton = downloadButtonPatterns.some((pattern) =>
+    htmlLower.includes(pattern)
+  );
 
   if (hasDownloadButton && !hasError) {
     return {
       isValid: true,
       fileName,
+      fileSize,
     };
   }
 

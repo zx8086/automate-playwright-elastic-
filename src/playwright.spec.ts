@@ -26,15 +26,19 @@ import {
   VIDEO_SELECTORS,
 } from "./constants";
 import { DownloadDetector } from "./download-detector";
+import {
+  downloadFromTransferPage,
+  isTransferUrl,
+} from "./download/transfer-handler";
 import { generateElasticSyntheticsTest } from "./synthetics-generator";
 import { TestState } from "./test-state";
 import {
   createDownloadOptions,
   createVerificationOptions,
   formatFileSize,
-  isBynderTransferUrl,
+  isExternalTransferUrl,
   isMalformedExternalUrl,
-  parseBynderTransferResponse,
+  parseExternalTransferPage,
 } from "./utils";
 
 // Extract schemas from config
@@ -184,58 +188,109 @@ test.describe("Site Navigation Test with Steps", () => {
             if (exists) {
               console.log(`Resource ${item.text} exists and is accessible`);
 
-              // Try to download the file
-              const downloadPath = path.join(config.server.downloadsDir, path.basename(item.href));
+              // Check if this is an external transfer URL that requires browser-based download
+              if (isExternalTransferUrl(absoluteUrl)) {
+                console.log(`[TRANSFER] Using browser-based download for transfer URL`);
 
-              if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
-                console.log(
-                  `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                // Use browser-based download for transfer pages
+                const transferResult = await downloadFromTransferPage(
+                  page,
+                  absoluteUrl,
+                  config.server.downloadsDir,
+                  false
                 );
-                const skippedDownload: SkippedDownload = {
-                  from: startUrl,
-                  to: absoluteUrl,
-                  label: item.text.replace(/\s+/g, " ").trim(),
-                  fileSize: contentLength,
-                  reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
-                };
-                // Validate before adding
-                SkippedDownloadSchema.parse(skippedDownload);
-                skippedDownloads.push(skippedDownload);
-              } else {
-                const downloadSuccessful = await downloadFile(absoluteUrl, downloadPath);
 
-                if (downloadSuccessful) {
-                  console.log(`Successfully downloaded: ${downloadPath}`);
-
-                  // Get file size
-                  const stats = fs.statSync(downloadPath);
-                  console.log(`File size: ${formatFileSize(stats.size)}`);
+                if (transferResult.success && transferResult.filePath) {
+                  console.log(`Successfully downloaded via browser: ${transferResult.fileName}`);
+                  console.log(`File size: ${formatFileSize(transferResult.fileSize || 0)}`);
 
                   // Add to navigation paths with validation
                   const navigationPath: NavigationPath = {
                     from: startUrl,
                     to: absoluteUrl,
-                    label: item.text,
+                    label: transferResult.fileName || item.text,
                     isDownloadable: true,
-                    fileSize: stats.size,
+                    fileSize: transferResult.fileSize,
                   };
                   NavigationPathSchema.parse(navigationPath);
                   navigationPaths.push(navigationPath);
 
                   // Mark this download as processed
                   processedDownloads.add(absoluteUrl);
+
+                  // Navigate back to base URL after browser download
+                  await page.goto(config.server.baseUrl, { timeout: TIMEOUTS.NAVIGATION });
+                  await page.waitForLoadState("domcontentloaded");
                 } else {
-                  console.log(`Download failed for: ${absoluteUrl}`);
+                  console.log(`Browser download failed: ${transferResult.error}`);
                   const skippedDownload: SkippedDownload = {
                     from: startUrl,
                     to: absoluteUrl,
                     label: item.text.replace(/\s+/g, " ").trim(),
                     fileSize: contentLength,
-                    reason: "Download failed",
+                    reason: transferResult.error || "Browser download failed",
+                  };
+                  SkippedDownloadSchema.parse(skippedDownload);
+                  skippedDownloads.push(skippedDownload);
+
+                  // Navigate back to base URL
+                  await page.goto(config.server.baseUrl, { timeout: TIMEOUTS.NAVIGATION });
+                  await page.waitForLoadState("domcontentloaded");
+                }
+              } else {
+                // Regular direct file download
+                const downloadPath = path.join(config.server.downloadsDir, path.basename(item.href));
+
+                if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
+                  console.log(
+                    `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                  );
+                  const skippedDownload: SkippedDownload = {
+                    from: startUrl,
+                    to: absoluteUrl,
+                    label: item.text.replace(/\s+/g, " ").trim(),
+                    fileSize: contentLength,
+                    reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
                   };
                   // Validate before adding
                   SkippedDownloadSchema.parse(skippedDownload);
                   skippedDownloads.push(skippedDownload);
+                } else {
+                  const downloadSuccessful = await downloadFile(absoluteUrl, downloadPath);
+
+                  if (downloadSuccessful) {
+                    console.log(`Successfully downloaded: ${downloadPath}`);
+
+                    // Get file size
+                    const stats = fs.statSync(downloadPath);
+                    console.log(`File size: ${formatFileSize(stats.size)}`);
+
+                    // Add to navigation paths with validation
+                    const navigationPath: NavigationPath = {
+                      from: startUrl,
+                      to: absoluteUrl,
+                      label: item.text,
+                      isDownloadable: true,
+                      fileSize: stats.size,
+                    };
+                    NavigationPathSchema.parse(navigationPath);
+                    navigationPaths.push(navigationPath);
+
+                    // Mark this download as processed
+                    processedDownloads.add(absoluteUrl);
+                  } else {
+                    console.log(`Download failed for: ${absoluteUrl}`);
+                    const skippedDownload: SkippedDownload = {
+                      from: startUrl,
+                      to: absoluteUrl,
+                      label: item.text.replace(/\s+/g, " ").trim(),
+                      fileSize: contentLength,
+                      reason: "Download failed",
+                    };
+                    // Validate before adding
+                    SkippedDownloadSchema.parse(skippedDownload);
+                    skippedDownloads.push(skippedDownload);
+                  }
                 }
               }
             } else {
@@ -405,57 +460,108 @@ test.describe("Site Navigation Test with Steps", () => {
                       console.log(
                         `Download resource ${downloadLink.text} exists and is accessible`
                       );
-                      // Try to download the file
-                      const downloadPath = path.join(
-                        config.server.downloadsDir,
-                        path.basename(downloadLink.href)
-                      );
-                      const downloadSuccessful = await downloadFile(downloadUrl, downloadPath);
-                      if (downloadSuccessful) {
-                        console.log(`Successfully downloaded from page: ${downloadPath}`);
-                        // Get file size
-                        const stats = fs.statSync(downloadPath);
-                        console.log(`File size: ${formatFileSize(stats.size)}`);
-                        // Add to navigation paths as a downloadable resource with validation
-                        const navigationPath: NavigationPath = {
-                          from: currentUrl,
-                          to: downloadUrl,
-                          label: `${downloadLink.text} (from ${item.text})`,
-                          isDownloadable: true,
-                          fileSize: stats.size,
-                        };
-                        NavigationPathSchema.parse(navigationPath);
-                        navigationPaths.push(navigationPath);
-                        // Mark this download as processed
-                        processedDownloads.add(downloadUrl);
-                      } else {
-                        console.log(`Download failed for: ${downloadUrl}`);
-                        if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
-                          console.log(
-                            `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
-                          );
-                          fs.existsSync(downloadPath) && fs.unlinkSync(downloadPath);
-                          const skippedDownload: SkippedDownload = {
-                            from: startUrl,
+
+                      // Check if this is an external transfer URL that requires browser-based download
+                      if (isExternalTransferUrl(downloadUrl)) {
+                        console.log(`[TRANSFER] Using browser-based download for transfer URL`);
+
+                        // Save current URL to return to after download
+                        const returnUrl = currentUrl;
+
+                        // Use browser-based download for transfer pages
+                        const transferResult = await downloadFromTransferPage(
+                          page,
+                          downloadUrl,
+                          config.server.downloadsDir,
+                          false
+                        );
+
+                        if (transferResult.success && transferResult.filePath) {
+                          console.log(`Successfully downloaded via browser: ${transferResult.fileName}`);
+                          console.log(`File size: ${formatFileSize(transferResult.fileSize || 0)}`);
+
+                          // Add to navigation paths with validation
+                          const navigationPath: NavigationPath = {
+                            from: currentUrl,
                             to: downloadUrl,
-                            label: downloadLink.text.replace(/\s+/g, " ").trim(),
-                            fileSize: contentLength,
-                            reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
+                            label: `${transferResult.fileName || downloadLink.text} (from ${item.text})`,
+                            isDownloadable: true,
+                            fileSize: transferResult.fileSize,
                           };
-                          // Validate before adding
-                          SkippedDownloadSchema.parse(skippedDownload);
-                          skippedDownloads.push(skippedDownload);
+                          NavigationPathSchema.parse(navigationPath);
+                          navigationPaths.push(navigationPath);
+
+                          // Mark this download as processed
+                          processedDownloads.add(downloadUrl);
                         } else {
+                          console.log(`Browser download failed: ${transferResult.error}`);
                           const skippedDownload: SkippedDownload = {
-                            from: startUrl,
+                            from: currentUrl,
                             to: downloadUrl,
                             label: downloadLink.text.replace(/\s+/g, " ").trim(),
                             fileSize: contentLength,
-                            reason: "Download failed",
+                            reason: transferResult.error || "Browser download failed",
                           };
-                          // Validate before adding
                           SkippedDownloadSchema.parse(skippedDownload);
                           skippedDownloads.push(skippedDownload);
+                        }
+
+                        // Navigate back to the page we were on
+                        await page.goto(returnUrl, { timeout: TIMEOUTS.NAVIGATION });
+                        await page.waitForLoadState("domcontentloaded");
+                      } else {
+                        // Regular direct file download
+                        const downloadPath = path.join(
+                          config.server.downloadsDir,
+                          path.basename(downloadLink.href)
+                        );
+                        const downloadSuccessful = await downloadFile(downloadUrl, downloadPath);
+                        if (downloadSuccessful) {
+                          console.log(`Successfully downloaded from page: ${downloadPath}`);
+                          // Get file size
+                          const stats = fs.statSync(downloadPath);
+                          console.log(`File size: ${formatFileSize(stats.size)}`);
+                          // Add to navigation paths as a downloadable resource with validation
+                          const navigationPath: NavigationPath = {
+                            from: currentUrl,
+                            to: downloadUrl,
+                            label: `${downloadLink.text} (from ${item.text})`,
+                            isDownloadable: true,
+                            fileSize: stats.size,
+                          };
+                          NavigationPathSchema.parse(navigationPath);
+                          navigationPaths.push(navigationPath);
+                          // Mark this download as processed
+                          processedDownloads.add(downloadUrl);
+                        } else {
+                          console.log(`Download failed for: ${downloadUrl}`);
+                          if (contentLength && contentLength > config.allowedDownloads.maxFileSize) {
+                            console.log(
+                              `File size ${formatFileSize(contentLength)} exceeds maximum allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`
+                            );
+                            fs.existsSync(downloadPath) && fs.unlinkSync(downloadPath);
+                            const skippedDownload: SkippedDownload = {
+                              from: startUrl,
+                              to: downloadUrl,
+                              label: downloadLink.text.replace(/\s+/g, " ").trim(),
+                              fileSize: contentLength,
+                              reason: `File size ${formatFileSize(contentLength)} exceeds max allowed size of ${formatFileSize(config.allowedDownloads.maxFileSize)}`,
+                            };
+                            // Validate before adding
+                            SkippedDownloadSchema.parse(skippedDownload);
+                            skippedDownloads.push(skippedDownload);
+                          } else {
+                            const skippedDownload: SkippedDownload = {
+                              from: startUrl,
+                              to: downloadUrl,
+                              label: downloadLink.text.replace(/\s+/g, " ").trim(),
+                              fileSize: contentLength,
+                              reason: "Download failed",
+                            };
+                            // Validate before adding
+                            SkippedDownloadSchema.parse(skippedDownload);
+                            skippedDownloads.push(skippedDownload);
+                          }
                         }
                       }
                     } else {
@@ -732,21 +838,29 @@ async function identifyNavigation(page: Page) {
             continue;
           }
 
-          // Proper download detection**
+          // Download detection (site-agnostic patterns)
           const isDownload =
             hasFileExtension ||
+            // Common download path patterns
             href.includes("/download") ||
             href.includes("/files/") ||
             href.includes("/media/") ||
+            href.includes("/resources/") ||
+            href.includes("/attachments/") ||
+            // Common archive filename patterns (generic)
             href.includes("product.zip") ||
             href.includes("stills.zip") ||
             href.includes("images.zip") ||
             href.includes("media.zip") ||
+            href.includes("photos.zip") ||
+            href.includes("assets.zip") ||
+            // Text-based detection
             text.toLowerCase().includes("download") ||
             (href.toLowerCase().includes("assets") && hasFileExtension) ||
-            // Bynder Brand Portal transfer URLs (external download service)
-            href.includes("brandportal.tommy.com/transfer") ||
-            href.includes("/transfer/");
+            // External transfer URL patterns (site-agnostic)
+            href.includes("/transfer/") ||
+            href.includes("/share/") ||
+            href.includes("/dl/");
 
           // Check if this link is already in our list
           if (!items.some((item) => item.href === href)) {
@@ -1324,11 +1438,11 @@ async function verifyResourceExists(
   statusCode?: number;
   error?: string;
   retriesAttempted?: number;
-  bynderFileName?: string;
+  transferFileName?: string;
 }> {
-  // Special handling for Bynder transfer URLs
-  if (isBynderTransferUrl(url)) {
-    return verifyBynderTransferUrl(url, silent);
+  // Special handling for external transfer URLs (Bynder, WeTransfer, etc.)
+  if (isExternalTransferUrl(url)) {
+    return verifyExternalTransferUrl(url, silent);
   }
 
   const maxRetries = silent
@@ -1441,9 +1555,10 @@ async function verifyResourceExists(
   };
 }
 
-// Special verification for Bynder transfer URLs
+// Special verification for external transfer URLs (Bynder, WeTransfer, Dropbox, etc.)
 // These URLs return HTML pages with download configuration, not direct files
-async function verifyBynderTransferUrl(
+// This function is site-agnostic and works with any transfer service
+async function verifyExternalTransferUrl(
   url: string,
   silent: boolean = false
 ): Promise<{
@@ -1452,10 +1567,10 @@ async function verifyBynderTransferUrl(
   statusCode?: number;
   error?: string;
   retriesAttempted?: number;
-  bynderFileName?: string;
+  transferFileName?: string;
 }> {
   if (!silent) {
-    console.log(`[BYNDER] Verifying Bynder transfer URL: ${url}`);
+    console.log(`[TRANSFER] Verifying external transfer URL: ${url}`);
   }
 
   return new Promise((resolve) => {
@@ -1477,7 +1592,7 @@ async function verifyBynderTransferUrl(
       const statusCode = res.statusCode || 0;
 
       if (!silent) {
-        console.log(`[BYNDER] Response status: ${statusCode}`);
+        console.log(`[TRANSFER] Response status: ${statusCode}`);
       }
 
       // Collect response body to analyze
@@ -1490,47 +1605,47 @@ async function verifyBynderTransferUrl(
       });
 
       res.on("end", () => {
-        // Check for Access Denied XML response
+        // Check for Access Denied XML response (common in cloud services)
         if (
           responseData.includes("<Code>AccessDenied</Code>") ||
           responseData.includes("<Message>Access Denied</Message>")
         ) {
           if (!silent) {
-            console.log(`[BYNDER] Access Denied - transfer link may be expired or restricted`);
+            console.log(`[TRANSFER] Access Denied - transfer link may be expired or restricted`);
           }
           resolve({
             exists: false,
             statusCode,
-            error: "Access Denied - Bynder transfer link expired or restricted",
+            error: "Access Denied - transfer link expired or restricted",
             retriesAttempted: 0,
           });
           return;
         }
 
-        // Parse the Bynder transfer page
-        const validation = parseBynderTransferResponse(responseData);
+        // Parse the transfer page using site-agnostic parser
+        const validation = parseExternalTransferPage(responseData);
 
         if (validation.isValid) {
           if (!silent) {
-            console.log(`[BYNDER] Valid transfer link found`);
+            console.log(`[TRANSFER] Valid transfer link found`);
             if (validation.fileName) {
-              console.log(`[BYNDER] File: ${validation.fileName}`);
+              console.log(`[TRANSFER] File: ${validation.fileName}`);
             }
           }
           resolve({
             exists: true,
             statusCode,
-            bynderFileName: validation.fileName,
+            transferFileName: validation.fileName,
             retriesAttempted: 0,
           });
         } else {
           if (!silent) {
-            console.log(`[BYNDER] Invalid transfer: ${validation.error}`);
+            console.log(`[TRANSFER] Invalid transfer: ${validation.error}`);
           }
           resolve({
             exists: false,
             statusCode,
-            error: validation.error || "Invalid Bynder transfer link",
+            error: validation.error || "Invalid transfer link",
             retriesAttempted: 0,
           });
         }
@@ -1539,7 +1654,7 @@ async function verifyBynderTransferUrl(
 
     req.on("error", (error) => {
       if (!silent) {
-        console.log(`[BYNDER] Request error: ${error.message}`);
+        console.log(`[TRANSFER] Request error: ${error.message}`);
       }
       resolve({
         exists: false,
@@ -1551,7 +1666,7 @@ async function verifyBynderTransferUrl(
     req.on("timeout", () => {
       req.destroy();
       if (!silent) {
-        console.log(`[BYNDER] Request timeout`);
+        console.log(`[TRANSFER] Request timeout`);
       }
       resolve({
         exists: false,
@@ -1863,6 +1978,8 @@ async function generateBrokenLinksReport(brokenLinks: Map<string, BrokenLink[]>)
       if (link.statusCode) {
         console.log(`        Status: HTTP ${link.statusCode}`);
       }
+      // Add spacing between broken link entries
+      console.log("");
     });
   }
 
@@ -1917,28 +2034,43 @@ async function scanPageForDownloads(page: Page, pageName: string) {
               !href.startsWith("http://") &&
               !href.startsWith("https://"));
 
-          // Determine if this is actually a download
+          // Determine if this is actually a download (site-agnostic patterns)
           const isDownload =
+            // Common downloadable file extensions
             href.includes(".pdf") ||
             href.includes(".zip") ||
             href.includes(".rar") ||
             href.includes(".7z") ||
+            href.includes(".doc") ||
+            href.includes(".docx") ||
+            href.includes(".xls") ||
+            href.includes(".xlsx") ||
+            // Common download path patterns
             href.includes("/assets/") ||
             href.includes("/download") ||
             href.includes("/media/") ||
             href.includes("/files/") ||
+            href.includes("/resources/") ||
+            href.includes("/attachments/") ||
+            // Common archive filename patterns (generic)
             href.includes("product.zip") ||
             href.includes("stills.zip") ||
             href.includes("images.zip") ||
             href.includes("campaign.zip") ||
+            href.includes("photos.zip") ||
+            href.includes("assets.zip") ||
+            // Text-based detection (generic)
             text.toLowerCase().includes("download") ||
             text.toLowerCase().includes("stills") ||
             text.toLowerCase().includes("high-res") ||
+            text.toLowerCase().includes("hi-res") ||
             text.toLowerCase().includes("assets") ||
+            text.toLowerCase().includes("get file") ||
             link.hasAttribute("download") ||
-            // Bynder Brand Portal transfer URLs (external download service)
-            href.includes("brandportal.tommy.com/transfer") ||
+            // External transfer URL patterns (site-agnostic)
             href.includes("/transfer/") ||
+            href.includes("/share/") ||
+            href.includes("/dl/") ||
             isMalformedUrl;
 
           if (isDownload && !downloads.some((d) => d.href === href)) {

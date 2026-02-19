@@ -171,6 +171,8 @@ export class ReportGenerator {
         if (link.statusCode) {
           console.log(`        Status: HTTP ${link.statusCode}`);
         }
+        // Add spacing between broken link entries
+        console.log("");
       });
     }
 

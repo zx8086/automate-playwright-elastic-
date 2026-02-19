@@ -1,0 +1,4 @@
+# Bun configuration file
+# https://bun.sh/docs/runtime/bunfig
+
+# Note: dotenv logging is suppressed via config.ts using { quiet: true }
